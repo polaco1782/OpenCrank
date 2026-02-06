@@ -189,8 +189,10 @@ struct AgentResult {
     int iterations;                 // Number of iterations used
     int tool_calls_made;            // Total tool calls made
     std::vector<std::string> tools_used;  // Names of tools that were called
+    bool paused;                    // True if paused at max iterations (awaiting /continue)
+    std::string pause_message;      // Message to show user when paused
     
-    AgentResult() : success(false), iterations(0), tool_calls_made(0) {}
+    AgentResult() : success(false), iterations(0), tool_calls_made(0), paused(false) {}
 };
 
 // ============================================================================

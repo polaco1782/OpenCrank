@@ -692,7 +692,6 @@ void GatewayPlugin::route_incoming_message(const Message& msg) {
 
 void GatewayPlugin::on_incoming_message(const Message& msg) {
     // This is called by the main application for all incoming messages
-    
     // Track most recent chat for routing outgoing messages
     recent_chat_id_ = msg.to;
     

@@ -204,13 +204,71 @@ CompletionResult LlamaCppAI::chat(
             const Json& message = first_choice["message"];
             result.content = message.value("content", std::string(""));
             
-            // Check if content is empty but we have reasoning_content (model using structured output)
-            if (result.content.empty() && message.contains("reasoning_content")) {
-                std::string reasoning = message.value("reasoning_content", std::string(""));
-                LOG_DEBUG("[LlamaCpp] Content empty but found reasoning_content (%zu chars)", reasoning.size());
+            // Check for reasoning_content (some models put thinking here)
+            std::string reasoning;
+            if (message.contains("reasoning_content")) {
+                reasoning = message.value("reasoning_content", std::string(""));
+                LOG_DEBUG("[LlamaCpp] Found reasoning_content (%zu chars)", reasoning.size());
+            }
+            
+            // Check for native OpenAI-style tool_calls in the response
+            // This is the standard format: message.tool_calls = [{id, type, function: {name, arguments}}]
+            if (message.contains("tool_calls") && message["tool_calls"].is_array() && 
+                !message["tool_calls"].empty()) {
                 
-                // The model may be using its native structured format
-                // We need to reconstruct a tool call format from the original response
+                const Json& tool_calls = message["tool_calls"];
+                LOG_INFO("[LlamaCpp] Found %zu native tool_call(s) in response", tool_calls.size());
+                
+                std::ostringstream reconstructed;
+                
+                // Include any text content or reasoning as preamble
+                if (!result.content.empty()) {
+                    reconstructed << result.content << "\n\n";
+                } else if (!reasoning.empty()) {
+                    // Don't include raw reasoning as it confuses the agent
+                    LOG_DEBUG("[LlamaCpp] Skipping reasoning_content preamble for native tool calls");
+                }
+                
+                for (size_t tc = 0; tc < tool_calls.size(); ++tc) {
+                    const Json& tc_obj = tool_calls[tc];
+                    
+                    if (!tc_obj.contains("function") || !tc_obj["function"].is_object()) {
+                        LOG_WARN("[LlamaCpp] tool_call[%zu] missing 'function' object, skipping", tc);
+                        continue;
+                    }
+                    
+                    const Json& func = tc_obj["function"];
+                    std::string tool_name = func.value("name", std::string(""));
+                    std::string arguments = func.value("arguments", std::string("{}"));
+                    
+                    if (tool_name.empty()) {
+                        LOG_WARN("[LlamaCpp] tool_call[%zu] has empty function name, skipping", tc);
+                        continue;
+                    }
+                    
+                    LOG_INFO("[LlamaCpp] Native tool_call[%zu]: %s", tc, tool_name.c_str());
+                    LOG_DEBUG("[LlamaCpp] Native tool_call[%zu] arguments: %s", tc, arguments.c_str());
+                    
+                    // Reconstruct as <tool_call> XML format for the agent to parse
+                    if (tc > 0) {
+                        reconstructed << "\n\n";
+                    }
+                    reconstructed << "<tool_call name=\"" << tool_name << "\">\n";
+                    reconstructed << arguments << "\n";
+                    reconstructed << "</tool_call>";
+                }
+                
+                result.content = reconstructed.str();
+                LOG_INFO("[LlamaCpp] Reconstructed %zu native tool call(s) into <tool_call> format",
+                         tool_calls.size());
+                LOG_DEBUG("[LlamaCpp] Reconstructed content: %.500s%s", result.content.c_str(),
+                          result.content.size() > 500 ? "..." : "");
+            }
+            // Fallback: content is empty, no tool_calls, but we have reasoning_content
+            else if (result.content.empty() && !reasoning.empty()) {
+                LOG_DEBUG("[LlamaCpp] No native tool_calls, checking raw body for tool call patterns");
+                
+                // The model may be using a non-standard structured format
                 // Check the raw response body for tool call indicators
                 std::string raw_body = response.body;
                 
@@ -240,14 +298,12 @@ CompletionResult LlamaCppAI::chat(
                                 std::string json_params = raw_body.substr(json_start, json_end - json_start);
                                 
                                 // Unescape the JSON (it's inside a JSON string in the response)
-                                // Replace \" with "
                                 std::string unescaped;
                                 unescaped.reserve(json_params.size());
                                 for (size_t i = 0; i < json_params.size(); ++i) {
                                     if (json_params[i] == '\\' && i + 1 < json_params.size()) {
                                         char next = json_params[i + 1];
                                         if (next == '"' || next == '\\' || next == 'n' || next == 't' || next == 'r') {
-                                            // Skip the backslash for quotes, keep for newlines/tabs
                                             if (next == '"') {
                                                 unescaped += '"';
                                                 i++;
@@ -260,20 +316,19 @@ CompletionResult LlamaCppAI::chat(
                                 
                                 // Reconstruct as standard tool_call format
                                 std::ostringstream reconstructed;
-                                reconstructed << reasoning << "\n\n";
                                 reconstructed << "<tool_call name=\"" << tool_name << "\">\n";
                                 reconstructed << unescaped << "\n";
                                 reconstructed << "</tool_call>";
                                 
                                 result.content = reconstructed.str();
-                                LOG_INFO("[LlamaCpp] Reconstructed tool call: %s with params", tool_name.c_str());
+                                LOG_INFO("[LlamaCpp] Reconstructed tool call from 'to=' pattern: %s", tool_name.c_str());
                                 LOG_DEBUG("[LlamaCpp] Reconstructed content: %.300s", result.content.c_str());
                             }
                         }
                     }
                 }
                 
-                // If we couldn't reconstruct, at least return the reasoning
+                // If we couldn't reconstruct, return the reasoning
                 if (result.content.empty()) {
                     result.content = reasoning;
                 }

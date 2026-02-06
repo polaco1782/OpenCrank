@@ -220,6 +220,8 @@ static JsonParseResult try_parse_json(const std::string& raw) {
     if (first_brace != std::string::npos && last_brace != std::string::npos && last_brace > first_brace) {
         std::string candidate = cleaned.substr(first_brace, last_brace - first_brace + 1);
         std::string sanitized = remove_trailing_commas(candidate);
+        
+        // Try parsing directly first
         try {
             res.value = Json::parse(sanitized);
             res.ok = true;
@@ -227,6 +229,80 @@ static JsonParseResult try_parse_json(const std::string& raw) {
             res.error.clear();
             return res;
         } catch (const std::exception& e) {
+            res.error = e.what();
+        }
+        
+        // Advanced recovery: Try to fix common escaping issues
+        // This handles cases like: {"command": "curl -H "Header: value""}
+        // by escaping internal quotes within string values
+        std::string fixed = sanitized;
+        bool in_string = false;
+        bool in_key = false;
+        bool escape_next = false;
+        size_t colon_pos = std::string::npos;
+        
+        for (size_t i = 0; i < fixed.size(); ++i) {
+            if (escape_next) {
+                escape_next = false;
+                continue;
+            }
+            
+            if (fixed[i] == '\\') {
+                escape_next = true;
+                continue;
+            }
+            
+            if (fixed[i] == '"') {
+                if (!in_string) {
+                    // Starting a string
+                    in_string = true;
+                    // Check if this is a key (before colon) or value (after colon)
+                    if (colon_pos == std::string::npos || i < colon_pos) {
+                        in_key = true;
+                    } else {
+                        in_key = false;
+                    }
+                } else {
+                    // Ending a string - but is this really the end or an unescaped quote?
+                    // If we're in a value string and the next non-whitespace char is not , or },
+                    // this might be an unescaped internal quote
+                    if (!in_key && in_string) {
+                        size_t next_char = i + 1;
+                        while (next_char < fixed.size() && 
+                               (fixed[next_char] == ' ' || fixed[next_char] == '\t' || 
+                                fixed[next_char] == '\n' || fixed[next_char] == '\r')) {
+                            next_char++;
+                        }
+                        
+                        // If next significant char is not , or }, this quote should be escaped
+                        if (next_char < fixed.size() && 
+                            fixed[next_char] != ',' && 
+                            fixed[next_char] != '}' && 
+                            fixed[next_char] != ']') {
+                            // Escape this quote
+                            fixed.insert(i, "\\");
+                            i++; // Skip the inserted backslash
+                            continue; // Don't toggle in_string
+                        }
+                    }
+                    in_string = false;
+                    in_key = false;
+                }
+            } else if (fixed[i] == ':' && !in_string) {
+                colon_pos = i;
+            }
+        }
+        
+        // Try parsing the fixed version
+        try {
+            res.value = Json::parse(fixed);
+            res.ok = true;
+            res.used = fixed;
+            res.error.clear();
+            LOG_DEBUG("[Agent] JSON recovery: auto-escaped internal quotes");
+            return res;
+        } catch (const std::exception& e) {
+            // Recovery failed, keep original error
             res.error = e.what();
             res.used = sanitized;
         }
@@ -387,10 +463,25 @@ std::string Agent::build_tools_prompt() const {
     
     std::ostringstream oss;
     oss << "## Available Tools\n\n";
-    oss << "You MUST use tools to complete tasks. Use this exact format:\n\n";
+    oss << "You MUST use tools to complete tasks. Supported formats:\n\n";
     oss << "<tool_call name=\"TOOLNAME\">\n";
     oss << "{\"param\": \"value\"}\n";
     oss << "</tool_call>\n\n";
+    oss << "OR shorthand:\n\n";
+    oss << "<tool_call>TOOLNAME\n";
+    oss << "{\"param\": \"value\"}\n";
+    oss << "</tool_call>\n\n";
+    
+    oss << "**CRITICAL JSON Rules:**\n";
+    oss << "1. All quotes inside JSON strings MUST be escaped with \\\\\n";
+    oss << "2. For curl commands with headers, prefer single quotes: curl -H 'Header: value'\n";
+    oss << "3. For complex JSON in curl -d, write to file first, then use curl -d @/tmp/file.json\n";
+    oss << "4. Example: {\\\"command\\\": \\\"curl -H 'Authorization: Bearer token' https://url\\\"}\\n\\n\";";
+    
+    oss << "**FORMAT Rules:**\n";
+    oss << "1. Start IMMEDIATELY with <tool_call> - NO explanatory text before it\n";
+    oss << "2. Parameters must be JSON format: {\\\"key\\\": \\\"value\\\"}, NOT XML <key>value</key>\n";
+    oss << "3. You can explain AFTER the tool call, never before\n\n";
 
     oss << "### Large Content Handling\n";
     oss << "When a tool returns content too large to fit in context, it will be automatically chunked.\n";
@@ -446,34 +537,154 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
         
         LOG_DEBUG("[Agent] Found <tool_call at position %zu", start);
         
-        // Find the name attribute
+        std::string tool_name;
+        std::string name_embedded_json;  // JSON recovered from malformed name attribute
+        size_t tag_end = 0;
+        
+        // Try standard format: <tool_call name="toolname">
         size_t name_start = response.find("name=\"", start);
-        if (name_start == std::string::npos || name_start > start + 50) {
-            // Invalid format, skip
-            LOG_DEBUG("[Agent] No name attribute found within 50 chars of <tool_call, skipping");
-            pos = start + 10;
-            continue;
+        if (name_start != std::string::npos && name_start < start + 50) {
+            name_start += 6;  // Skip past name="
+            
+            size_t name_end = response.find("\"", name_start);
+            if (name_end == std::string::npos) {
+                LOG_DEBUG("[Agent] No closing quote for name attribute, skipping");
+                pos = start + 10;
+                continue;
+            }
+            
+            tool_name = response.substr(name_start, name_end - name_start);
+            LOG_DEBUG("[Agent] Extracted raw tool name from attribute: '%s'", tool_name.c_str());
+            
+            // Recovery: detect when the model stuffs JSON args into the name attribute
+            // Pattern: <tool_call name="bash\n{"command":"..."}">
+            // The extracted "name" will contain a newline and/or '{'
+            size_t newline_in_name = tool_name.find('\n');
+            size_t brace_in_name = tool_name.find('{');
+            size_t split_pos = std::string::npos;
+            
+            if (newline_in_name != std::string::npos) {
+                split_pos = newline_in_name;
+            } else if (brace_in_name != std::string::npos && brace_in_name > 0) {
+                split_pos = brace_in_name;
+            }
+            
+            if (split_pos != std::string::npos) {
+                // The real tool name is before the split, JSON args are after
+                std::string real_name = trim_whitespace(tool_name.substr(0, split_pos));
+                
+                LOG_WARN("[Agent] Tool name '%s' contains embedded content, recovering as '%s'", 
+                         tool_name.c_str(), real_name.c_str());
+                
+                // Grab ALL raw text from the '{' in the name attribute through </tool_call>
+                // and let try_parse_json extract the JSON with its recovery logic.
+                // This is more robust than brace-tracking through C++ code with unescaped quotes.
+                size_t json_scan_start = name_start + split_pos;
+                size_t json_obj_start = response.find('{', json_scan_start);
+                if (json_obj_start != std::string::npos) {
+                    // Find </tool_call> to bound our search
+                    size_t end_tag = response.find("</tool_call>", json_obj_start);
+                    if (end_tag == std::string::npos) {
+                        end_tag = response.size();
+                    }
+                    
+                    // Collect everything from '{' to just before </tool_call>
+                    std::string raw_json_area = response.substr(json_obj_start, end_tag - json_obj_start);
+                    
+                    // The raw area likely looks like:
+                    //   {"command": "g++ ..."}">\n{}\n
+                    // We need to strip the trailing junk: ">  and the {} body between tags
+                    
+                    // Remove </arg_value> tags
+                    size_t junk_pos;
+                    while ((junk_pos = raw_json_area.find("</arg_value>")) != std::string::npos) {
+                        raw_json_area.erase(junk_pos, 12);
+                    }
+                    while ((junk_pos = raw_json_area.find("<arg_value>")) != std::string::npos) {
+                        raw_json_area.erase(junk_pos, 11);
+                    }
+                    
+                    // Try to find where the opening tag's ">" is, 
+                    // and strip everything from there onward (the between-tags content)
+                    // Look for "> pattern that closes the opening tag attribute
+                    // The pattern after the JSON is typically: }">\n  or }">   followed by {} or whitespace
+                    // We look for the LAST occurrence of "> since the JSON itself won't contain that
+                    size_t closing_attr = raw_json_area.rfind("\">");
+                    if (closing_attr != std::string::npos) {
+                        // Check if there's a } before the "> — that's the end of our JSON
+                        // Find the last } before or at closing_attr
+                        size_t last_brace = raw_json_area.rfind('}', closing_attr);
+                        if (last_brace != std::string::npos) {
+                            raw_json_area = raw_json_area.substr(0, last_brace + 1);
+                        }
+                    }
+                    
+                    name_embedded_json = trim_whitespace(raw_json_area);
+                    LOG_DEBUG("[Agent] Raw JSON area from name attr (%zu chars): %.300s%s", 
+                              name_embedded_json.size(), name_embedded_json.c_str(),
+                              name_embedded_json.size() > 300 ? "..." : "");
+                }
+                
+                tool_name = real_name;
+                
+                // Skip past everything to the closing tag area
+                // Find the > that closes the opening tag attributes
+                size_t scan = name_end;
+                while (scan < response.size() && response[scan] != '>') {
+                    scan++;
+                }
+                if (scan < response.size()) {
+                    name_end = scan;
+                }
+            }
+            
+            // Find the end of opening tag (skip past any remaining junk like </arg_value>">
+            tag_end = response.find(">", name_end);
+            if (tag_end == std::string::npos) {
+                LOG_DEBUG("[Agent] No closing > for opening tag, skipping");
+                pos = start + 10;
+                continue;
+            }
+            tag_end++;  // Move past >
+        } else {
+            // Fallback format: <tool_call>toolname (without name attribute)
+            LOG_DEBUG("[Agent] No name attribute, trying fallback format: <tool_call>toolname");
+            size_t bracket_end = response.find(">", start);
+            if (bracket_end == std::string::npos) {
+                LOG_DEBUG("[Agent] No closing > for <tool_call, skipping");
+                pos = start + 10;
+                continue;
+            }
+            
+            // Extract content after > until newline or whitespace
+            tag_end = bracket_end + 1;
+            size_t name_end = tag_end;
+            while (name_end < response.size() && 
+                   response[name_end] != '\n' && 
+                   response[name_end] != '\r' &&
+                   response[name_end] != ' ' &&
+                   response[name_end] != '\t' &&
+                   response[name_end] != '{') {
+                name_end++;
+            }
+            
+            if (name_end == tag_end) {
+                LOG_DEBUG("[Agent] No tool name found after <tool_call>, skipping");
+                pos = start + 10;
+                continue;
+            }
+            
+            tool_name = response.substr(tag_end, name_end - tag_end);
+            tool_name = trim_whitespace(tool_name);
+            LOG_DEBUG("[Agent] Extracted tool name from fallback format: '%s'", tool_name.c_str());
+            
+            // Skip any whitespace/newlines before JSON content
+            while (tag_end < response.size() && 
+                   (response[tag_end] != '{' && response[tag_end] != '<')) {
+                tag_end++;
+            }
         }
-        name_start += 6;  // Skip past name="
         
-        size_t name_end = response.find("\"", name_start);
-        if (name_end == std::string::npos) {
-            LOG_DEBUG("[Agent] No closing quote for name attribute, skipping");
-            pos = start + 10;
-            continue;
-        }
-        
-        std::string tool_name = response.substr(name_start, name_end - name_start);
-        LOG_DEBUG("[Agent] Extracted tool name: '%s'", tool_name.c_str());
-        
-        // Find the end of opening tag
-        size_t tag_end = response.find(">", name_end);
-        if (tag_end == std::string::npos) {
-            LOG_DEBUG("[Agent] No closing > for opening tag, skipping");
-            pos = start + 10;
-            continue;
-        }
-        tag_end++;  // Move past >
         LOG_DEBUG("[Agent] Opening tag ends at position %zu", tag_end);
         
         // Find </tool_call>
@@ -514,7 +725,23 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
         
         content = trim_whitespace(content);
         
-        LOG_DEBUG("[Agent] Trimmed content for '%s' (length=%zu): '%s'", 
+        // Clean up </arg_value> junk that some models emit
+        size_t arg_junk;
+        while ((arg_junk = content.find("</arg_value>")) != std::string::npos) {
+            content.erase(arg_junk, 12);
+        }
+        while ((arg_junk = content.find("<arg_value>")) != std::string::npos) {
+            content.erase(arg_junk, 11);
+        }
+        content = trim_whitespace(content);
+        
+        // If we recovered JSON from the name attribute, use that instead of tag content
+        if (!name_embedded_json.empty()) {
+            LOG_INFO("[Agent] Using JSON recovered from name attribute for '%s'", tool_name.c_str());
+            content = name_embedded_json;
+        }
+        
+        LOG_DEBUG("[Agent] Final content for '%s' (length=%zu): '%s'", 
                   tool_name.c_str(), content.size(), content.c_str());
         
         ParsedToolCall call;
@@ -526,6 +753,25 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
             call.end_pos = close_tag;
         }
         call.raw_content = content;
+        
+        // Detect XML tags inside tool_call (common mistake - should be JSON)
+        if (!content.empty() && content != "{}" && content.find('<') != std::string::npos) {
+            // Check if this looks like XML parameters instead of JSON
+            size_t bracket_pos = content.find('<');
+            size_t brace_pos = content.find('{');
+            
+            // If < comes before { or there's no {, this is likely XML format
+            if (brace_pos == std::string::npos || bracket_pos < brace_pos) {
+                call.valid = false;
+                call.parse_error = "INVALID FORMAT: Tool parameters must be JSON, not XML. "
+                                  "Use {\"param\": \"value\"} format, NOT <param>value</param>. "
+                                  "Example: <tool_call name=\"write\">\n{\"path\": \"file.txt\", \"content\": \"data\"}\n</tool_call>";
+                calls.push_back(call);
+                pos = call.end_pos;
+                LOG_WARN("[Agent] Detected XML tags in tool_call '%s' - rejecting", tool_name.c_str());
+                continue;
+            }
+        }
         
         // Parse JSON parameters
         if (content.empty() || content == "{}") {
@@ -662,7 +908,24 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
             effective_call.valid = true;
             LOG_DEBUG("[Agent] Recovered tool params for '%s' from raw content", call.tool_name.c_str());
         } else {
-            return AgentToolResult::fail("Invalid tool call: " + (recover_error.empty() ? call.parse_error : recover_error));
+            // Provide helpful error message with escaping guidance
+            std::ostringstream error_msg;
+            error_msg << "Invalid tool call - JSON parsing failed.\n\n";
+            error_msg << "Error: " << (recover_error.empty() ? call.parse_error : recover_error) << "\n\n";
+            error_msg << "**Common issues:**\n";
+            error_msg << "1. Unescaped quotes in strings - Use \\\" inside JSON strings\n";
+            error_msg << "2. For curl commands, prefer single quotes on the outside:\n";
+            error_msg << "   {\"command\": \"curl -H 'Header: value' 'https://url'\"}\n";
+            error_msg << "3. Or properly escape all internal quotes:\n";
+            error_msg << "   {\"command\": \"curl -H \\\"Header: value\\\" \\\"https://url\\\"\"}\n";
+            error_msg << "4. For complex JSON payloads in curl -d, write to a file first:\n";
+            error_msg << "   Use the 'write' tool to create a JSON file, then:\n";
+            error_msg << "   {\"command\": \"curl -d @/tmp/payload.json https://url\"}\n\n";
+            error_msg << "Raw content received:\n" << call.raw_content.substr(0, 500);
+            if (call.raw_content.size() > 500) {
+                error_msg << "... [truncated]";
+            }
+            return AgentToolResult::fail(error_msg.str());
         }
     }
     
@@ -1007,16 +1270,80 @@ AgentResult Agent::run(
             // Patterns that indicate the AI wants to use a tool NOW
             // Only trigger if it's a clear statement of intent to act immediately
             const char* intent_patterns[] = {
+                "let me create",
+                "let me write",
+                "let me read",
+                "let me check",
+                "let me look",
+                "let me search",
+                "let me fetch",
+                "let me browse",
+                "let me run",
+                "let me execute",
+                "let me try",
+                "let me make",
+                "let me update",
+                "let me modify",
+                "let me delete",
+                "let me remove",
+                "let me add",
+                "let me open",
+                "let me download",
+                "let me get",
+                "let me see",
+                "let me find",
+                "let me use",
+                "let me install",
+                "i'll create",
+                "i'll write",
+                "i'll read",
+                "i'll check",
+                "i'll run",
+                "i'll execute",
+                "i'll fetch",
+                "i'll browse",
+                "i'll search",
+                "i'll make",
+                "i'll use",
+                "i will create",
+                "i will write",
+                "i will run",
+                "i need to create",
+                "i need to write",
+                "i need to read",
+                "i need to check",
+                "i need to run",
+                "i need to fetch",
+                "i need to browse",
+                "i need to search",
+                "i need to make",
+                "now i'll",
+                "now let me",
                 "let's do that",
                 "let's do it",
+                "let's create",
+                "let's check",
+                "let's write",
+                "let's run",
+                "let's look",
+                "let's fetch",
+                "let's search",
+                "let's make",
+                "i should check",
+                "i should write",
+                "i should run", 
+                "i should do",
+                "i should use the",
                 "i'll do that",
                 "doing that now",
                 "executing now",
                 "running the command now",
                 "let's execute it",
                 "i'll emit the tool call",
+                "i need to emit",
                 "emitting tool call",
                 "calling the tool",
+                "i can handle using the",
                 NULL
             };
             
@@ -1034,13 +1361,13 @@ AgentResult Agent::run(
                 
                 // Add the AI's response to history
                 history.push_back(ConversationMessage::assistant(response));
-                
-                // Add a prompt to actually emit the tool call
+
+                // stupid model won't act, lets kick it's arse
                 std::string continuation_prompt = 
-                    "You indicated you want to use a tool, but you didn't emit the actual tool call. "
-                    "Please emit the tool call now using the exact format:\n\n"
+                    "You said you would take action but didn't use a tool. "
+                    "Stop planning and ACT NOW. Emit the tool call immediately:\n\n"
                     "<tool_call name=\"TOOLNAME\">\n{\"param\": \"value\"}\n</tool_call>\n\n"
-                    "Do not explain - just emit the tool call.";
+                    "Do NOT explain. Do NOT plan. Just emit the tool call.";
                 
                 history.push_back(ConversationMessage::user(continuation_prompt));
                 continue;  // Continue the loop to get the actual tool call
@@ -1151,12 +1478,28 @@ AgentResult Agent::run(
         }
     }
     
-    // Reached max iterations
-    LOG_WARN("[Agent] Reached max iterations (%d)", config.max_iterations);
-    result.success = true;  // Partial success
-    result.final_response = accumulated_response.empty() 
-        ? "Reached maximum tool call iterations." 
-        : accumulated_response + "\n\n(Reached maximum iterations)";
+    // Reached max iterations - pause instead of stopping
+    LOG_WARN("[Agent] Reached max iterations (%d) - pausing for user confirmation", config.max_iterations);
+    result.success = false;  // Not completed yet
+    result.paused = true;
+    
+    std::ostringstream pause_msg;
+    pause_msg << "⏸️ **Task paused after " << config.max_iterations << " iterations**\n\n";
+    
+    if (!accumulated_response.empty()) {
+        pause_msg << "Progress so far:\n" << accumulated_response << "\n\n";
+    }
+    
+    pause_msg << "The AI has made " << result.tool_calls_made << " tool calls ";
+    pause_msg << "and needs more iterations to complete the task.\n\n";
+    pause_msg << "**Options:**\n";
+    pause_msg << "• `/continue` - Allow 15 more iterations\n";
+    pause_msg << "• `/continue <N>` - Allow N more iterations\n";
+    pause_msg << "• `/continue no-stop` - Remove iteration limit (use with caution)\n";
+    pause_msg << "• `/cancel` - Stop the task\n";
+    
+    result.pause_message = pause_msg.str();
+    result.final_response = result.pause_message;
     
     return result;
 }

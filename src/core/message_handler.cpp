@@ -280,13 +280,28 @@ std::string handle_ai_message(
     );
     
     LOG_DEBUG("[AI] === Agent loop complete ===");
-    LOG_DEBUG("[AI] Success: %s", agent_result.success ? "yes" : "no");
+    LOG_DEBUG("[AI] Success: %s, Paused: %s", 
+              agent_result.success ? "yes" : "no",
+              agent_result.paused ? "yes" : "no");
     LOG_DEBUG("[AI] Iterations: %d", agent_result.iterations);
     LOG_DEBUG("[AI] Tool calls: %d", agent_result.tool_calls_made);
     LOG_DEBUG("[AI] Response length: %zu chars", agent_result.final_response.size());
     
     std::string response;
-    if (agent_result.success) {
+    if (agent_result.paused) {
+        // Store paused state in session for /continue command
+        session.set_data("agent_paused", "true");
+        session.set_data("agent_iterations", std::to_string(agent_result.iterations));
+        session.set_data("agent_tool_calls", std::to_string(agent_result.tool_calls_made));
+        
+        response = agent_result.pause_message;
+        LOG_INFO("[AI] Agent paused after %d iterations, awaiting /continue", agent_result.iterations);
+    } else if (agent_result.success) {
+        // Clear any paused state
+        session.remove_data("agent_paused");
+        session.remove_data("agent_iterations");
+        session.remove_data("agent_tool_calls");
+        
         response = agent_result.final_response;
         
         // Log tools used
@@ -299,6 +314,11 @@ std::string handle_ai_message(
             LOG_INFO("[AI] Tools used: %s", tools_str.str().c_str());
         }
     } else {
+        // Clear paused state on error
+        session.remove_data("agent_paused");
+        session.remove_data("agent_iterations");
+        session.remove_data("agent_tool_calls");
+        
         response = "❌ Agent error: " + agent_result.error;
     }
     

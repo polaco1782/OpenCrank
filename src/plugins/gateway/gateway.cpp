@@ -124,7 +124,7 @@ private:
         CROW_ROUTE(app_, "/index.html")
         ([this]() {
             crow::response res;
-            std::ifstream html_file("ui/control_ui.html");
+            std::ifstream html_file(plugin_->index_filename());
             if (html_file.is_open()) {
                 std::stringstream buffer;
                 buffer << html_file.rdbuf();
@@ -261,6 +261,7 @@ GatewayPlugin::GatewayPlugin()
     : running_(false)
     , port_(18789)
     , bind_host_("127.0.0.1")
+    , index_filename_("ui/control_ui.html")
     , ws_server_(nullptr) {
     initialized_ = false;
 }
@@ -278,6 +279,7 @@ bool GatewayPlugin::init(const Config& cfg) {
     port_ = cfg.get_int("gateway.port", 18789);
     bind_host_ = cfg.get_string("gateway.bind", "127.0.0.1");
     auth_token_ = cfg.get_string("gateway.auth.token", "");
+    index_filename_ = cfg.get_string("gateway.index_file", "ui/control_ui.html");
     
     
     LOG_INFO("Gateway config: port=%d, bind=%s, auth=%s", 

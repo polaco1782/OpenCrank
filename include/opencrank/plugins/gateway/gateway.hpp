@@ -50,6 +50,7 @@ public:
     // Get server status
     int port() const { return port_; }
     size_t client_count() const;
+    const std::string& index_filename() const { return index_filename_; }
     
     // Broadcast events to all connected clients
     void broadcast(const std::string& event, const Json& payload);

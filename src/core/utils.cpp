@@ -161,6 +161,63 @@ std::string truncate_safe(const std::string& s, size_t max_len) {
     return s.substr(0, len);
 }
 
+std::string sanitize_utf8(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    
+    for (size_t i = 0; i < s.size(); ) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        
+        // Determine expected byte count from leading byte
+        int expected = 0;
+        if (c < 0x80) {
+            // ASCII range: allow tab (0x09), newline (0x0A), and printable chars
+            // Strip carriage return (0x0D) and other control chars
+            if (c == 0x09 || c == 0x0A || c >= 0x20) {
+                out.push_back(static_cast<char>(c));
+            }
+            // else: skip control character (including 0x0D \r)
+            ++i;
+            continue;
+        } else if ((c & 0xE0) == 0xC0) {
+            expected = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            expected = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            expected = 4;
+        } else {
+            // Invalid leading byte, skip
+            ++i;
+            continue;
+        }
+        
+        // Validate continuation bytes
+        bool valid = true;
+        if (i + expected > s.size()) {
+            valid = false;
+        } else {
+            for (int j = 1; j < expected; ++j) {
+                if ((static_cast<unsigned char>(s[i + j]) & 0xC0) != 0x80) {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        
+        if (valid) {
+            for (int j = 0; j < expected; ++j) {
+                out.push_back(s[i + j]);
+            }
+            i += expected;
+        } else {
+            // Skip invalid byte
+            ++i;
+        }
+    }
+    
+    return out;
+}
+
 // ============ Phone number utilities ============
 
 std::string normalize_e164(const std::string& number) {

@@ -307,7 +307,7 @@ SendResult GatewayPlugin::send_message(const std::string& to, const std::string&
     // Broadcast to all gateway clients
     Json payload = Json::object();
     payload["to"] = to;
-    payload["text"] = text;
+    payload["text"] = sanitize_utf8(text);
     broadcast("chat.outgoing", payload);
     return SendResult::ok("gw_" + std::to_string(std::time(nullptr)));
 }
@@ -316,7 +316,7 @@ SendResult GatewayPlugin::send_message(const std::string& to, const std::string&
     // Broadcast to all gateway clients
     Json payload = Json::object();
     payload["to"] = to;
-    payload["text"] = text;
+    payload["text"] = sanitize_utf8(text);
     payload["reply_to"] = reply_to;
     broadcast("chat.outgoing", payload);
     return SendResult::ok("gw_" + std::to_string(std::time(nullptr)));
@@ -665,9 +665,9 @@ void GatewayPlugin::route_incoming_message(const Message& msg) {
     event_payload["id"] = msg.id;
     event_payload["channel"] = msg.channel;
     event_payload["from"] = msg.from;
-    event_payload["from_name"] = msg.from_name;
+    event_payload["from_name"] = sanitize_utf8(msg.from_name);
     event_payload["to"] = msg.to;
-    event_payload["text"] = msg.text;
+    event_payload["text"] = sanitize_utf8(msg.text);
     event_payload["chat_type"] = msg.chat_type;
     event_payload["timestamp"] = static_cast<int>(msg.timestamp);
     

@@ -107,7 +107,7 @@ std::string cmd_info(const Message& msg, Session& /*session*/, const std::string
 
 std::string cmd_start(const Message& /*msg*/, Session& /*session*/, const std::string& /*args*/) {
     return "Welcome to OpenCrank! 🦞\n\n"
-           "I'm a personal AI assistant powered by Claude.\n"
+           "I'm a personal AI assistant powered by C++. I can chat with you, run tools, and help automate tasks.\n\n"
            "Just send me a message to chat, or type /help for commands.";
 }
 

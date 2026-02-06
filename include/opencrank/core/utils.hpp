@@ -76,6 +76,10 @@ std::string replace_all(const std::string& s, const std::string& from, const std
 // Truncate string safely (UTF-8 aware, doesn't break multi-byte chars)
 std::string truncate_safe(const std::string& s, size_t max_len);
 
+// Sanitize a string for safe JSON serialization
+// Replaces invalid UTF-8 sequences and problematic control characters
+std::string sanitize_utf8(const std::string& s);
+
 // ============ Phone number utilities ============
 
 // Normalize phone number to E.164 format (+1234567890)

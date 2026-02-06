@@ -245,7 +245,7 @@ std::string handle_ai_message(
     
     auto* ai = app.registry().get_default_ai();
     if (!ai || !ai->is_configured()) {
-        return "🤖 AI not configured. Set claude.api_key in config.json to enable Claude.\n"
+        return "No AI provider configured. Set in config.json to enable AI features. ";
                "Type /help for available commands.";
     }
     

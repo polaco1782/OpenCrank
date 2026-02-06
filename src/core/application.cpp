@@ -42,22 +42,12 @@ void print_usage(const char* prog) {
               << "Options:\n"
               << "  -h, --help     Show this help message\n"
               << "  -v, --version  Show version\n\n"
-              << "Config file format (JSON):\n"
-              << "  {\n"
-              << "    \"plugins\": [\"telegram\", \"claude\", \"browser\", \"memory\"],\n"
-              << "    \"plugins_dir\": \"./plugins\",\n"
-              << "    \"log_level\": \"info\",\n"
-              << "    \"system_prompt\": \"You are a helpful assistant.\",\n"
-              << "    \"telegram\": { \"bot_token\": \"...\" },\n"
-              << "    \"claude\": { \"api_key\": \"...\" }\n"
-              << "  }\n\n"
               << "Example:\n"
               << "  " << prog << " config.json\n";
 }
 
 void print_version() {
-    std::cout << AppInfo::NAME << " v" << AppInfo::VERSION << " (dynamic plugins)\n"
-              << "Available plugins: telegram, whatsapp, browser, claude, memory\n";
+    std::cout << AppInfo::NAME << " v" << AppInfo::VERSION << " (dynamic plugins)\n";
 }
 
 std::vector<std::string> split_message_chunks(const std::string& text, size_t max_len) {
@@ -331,7 +321,7 @@ void Application::setup_channels() {
     if (ai && ai->is_configured()) {
         LOG_INFO("AI provider: %s (%s)", ai->provider_id().c_str(), ai->default_model().c_str());
     } else {
-        LOG_WARN("No AI provider configured. Set claude.api_key in config.json for Claude.");
+        LOG_WARN("No AI provider configured. Set in config.json to enable AI features.");
     }
     
     LOG_INFO("%d channel(s) started, ready to receive messages", started_count);

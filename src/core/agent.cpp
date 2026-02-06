@@ -390,79 +390,25 @@ std::string Agent::build_tools_prompt() const {
     oss << "<tool_call name=\"TOOLNAME\">\n";
     oss << "{\"param\": \"value\"}\n";
     oss << "</tool_call>\n\n";
-    
-    // Check what categories of tools we have
-    bool has_browser = false;
-    bool has_memory = false;
-    bool has_bash = false;
-    bool has_read = false;
-    bool has_content_chunk = false;
-    
-    for (std::map<std::string, AgentTool>::const_iterator it = tools_.begin();
-         it != tools_.end(); ++it) {
-        const std::string& name = it->first;
-        if (name.find("browser") != std::string::npos) has_browser = true;
-        if (name.find("memory") != std::string::npos || name.find("task") != std::string::npos) has_memory = true;
-        if (name == "bash") has_bash = true;
-        if (name == "read") has_read = true;
-        if (name == "content_chunk" || name == "content_search") has_content_chunk = true;
-    }
-    
-    oss << "### Examples:\n\n";
-    
-    if (has_read) {
-        oss << "Read file example:\n";
-        oss << "<tool_call name=\"read\">\n";
-        oss << "{\"path\": \"./skills/weather/SKILL.md\"}\n";
-        oss << "</tool_call>\n\n";
-    }
-    
-    if (has_bash) {
-        oss << "Bash command example:\n";
-        oss << "<tool_call name=\"bash\">\n";
-        oss << "{\"command\": \"ls -la\"}\n";
-        oss << "</tool_call>\n\n";
-    }
-    
-    if (has_browser) {
-        oss << "Web fetching example:\n";
-        oss << "<tool_call name=\"browser_extract_text\">\n";
-        oss << "{\"url\": \"https://example.com\"}\n";
-        oss << "</tool_call>\n\n";
-    }
-    
-    if (has_memory) {
-        oss << "Save to memory example:\n";
-        oss << "<tool_call name=\"memory_save\">\n";
-        oss << "{\"content\": \"User prefers dark mode\", \"append\": true}\n";
-        oss << "</tool_call>\n\n";
-    }
-    
-    oss << "CRITICAL: The name MUST be one of the tool names below.\n";
-    oss << "CRITICAL: Use single quotes in bash commands to avoid escaping issues.\n";
-    oss << "CRITICAL: JSON params must be valid - no extra escaping needed.\n\n";
 
-    if (has_browser) {
-        oss << "### Web Fetching\n";
-        oss << "When you need to fetch or read web content, use 'browser_extract_text' for readable text,\n";
-        oss << "'browser_fetch' for raw HTML, and 'browser_get_links' for links.\n\n";
-    }
-    
-    if (has_content_chunk) {
-        oss << "### Large Content Handling\n";
-        oss << "When a tool returns content too large to fit in context, it will be automatically chunked.\n";
-        oss << "You'll see a message like 'Stored as chunk_N with X chunks'. To access this content:\n";
-        oss << "- Use 'content_chunk' with id and chunk number (0-based) to retrieve specific chunks\n";
-        oss << "- Use 'content_search' with id and query to search within the content\n";
-        oss << "This allows you to work with large web pages, files, or command outputs.\n\n";
-    }
-    
+    oss << "### Large Content Handling\n";
+    oss << "When a tool returns content too large to fit in context, it will be automatically chunked.\n";
+    oss << "You'll see a message like 'Stored as chunk_N with X chunks'. To access this content:\n";
+    oss << "- Use 'content_chunk' with id and chunk number (0-based) to retrieve specific chunks\n";
+    oss << "- Use 'content_search' with id and query to search within the content\n";
+    oss << "This allows you to work with large web pages, files, or command outputs.\n\n";
+
+    oss << "### Web Fetching\n";
+    oss << "When you need to fetch or read web content, use 'browser_extract_text' for readable text,\n";
+    oss << "'browser_fetch' for raw HTML, and 'browser_get_links' for links.\n\n";
+
     oss << "### Tools:\n\n";
     
     for (std::map<std::string, AgentTool>::const_iterator it = tools_.begin();
          it != tools_.end(); ++it) {
         const AgentTool& tool = it->second;
         oss << "**" << tool.name << "**: " << tool.description << "\n";
+        LOG_DEBUG("[Agent] Tool '%s' has %zu parameters", tool.name.c_str(), tool.params.size());
         
         if (!tool.params.empty()) {
             oss << "  Parameters:\n";
@@ -471,6 +417,10 @@ std::string Agent::build_tools_prompt() const {
                 oss << "  - `" << param.name << "` (" << param.type;
                 if (param.required) oss << ", required";
                 oss << "): " << param.description << "\n";
+
+                LOG_DEBUG("[Agent] Tool '%s' parameter '%s': type=%s, required=%s", 
+                          tool.name.c_str(), param.name.c_str(), param.type.c_str(), 
+                          param.required ? "true" : "false");
             }
         }
         oss << "\n";

@@ -1,0 +1,36 @@
+# Shared plugin build configuration
+# This file is included by individual plugin Makefiles
+
+# Compiler and flags
+CXX = g++
+CXXFLAGS = -std=c++11 -Wall -Wextra -O2 -I../../../include
+CXXFLAGS_PIC = $(CXXFLAGS) -fPIC -fvisibility=hidden
+LDFLAGS = -lpthread -lsqlite3 -lssl -lcrypto -lcurl -ldl
+LDFLAGS_PLUGIN = -shared
+
+# Directories
+ROOT_DIR = ../../..
+BUILD_DIR = $(ROOT_DIR)/build
+INSTALL_DIR = $(ROOT_DIR)/bin/plugins
+
+# Core object files (shared across all plugins)
+# NOTE: registry.o is intentionally excluded - plugins use the singleton from main binary
+# NOTE: json.o removed - nlohmann/json is header-only
+CORE_OBJECTS = $(BUILD_DIR)/types.o \
+               $(BUILD_DIR)/logger.o \
+               $(BUILD_DIR)/config.o \
+               $(BUILD_DIR)/http_client.o \
+               $(BUILD_DIR)/utils.o \
+               $(BUILD_DIR)/session.o \
+               $(BUILD_DIR)/rate_limiter.o \
+               $(BUILD_DIR)/loader.o \
+               $(BUILD_DIR)/ai.o \
+               $(BUILD_DIR)/memory_store.o \
+               $(BUILD_DIR)/memory_manager.o
+
+# Plugin-specific objects (derived from PLUGIN_SOURCES)
+PLUGIN_OBJECTS = $(PLUGIN_SOURCES:.cpp=.o)
+
+# Build rule for plugin objects
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@

@@ -1,0 +1,107 @@
+{
+  "_comment": "OpenCrank C++11 - Example Configuration. Copy to config.json and fill in your credentials.",
+
+  "plugins": [
+    "telegram",
+    "llamacpp",
+    "gateway"
+  ],
+
+  "plugins_dir": "./bin/plugins",
+  "workspace_dir": ".",
+  "log_level": "info",
+
+  "system_prompt": "You are OpenCrank, a helpful AI assistant. Be friendly, concise, and helpful. You have access to tools for browsing the web and managing memory/tasks.",
+
+  "_section_skills": "========== SKILLS SYSTEM ==========",
+
+  "skills": {
+    "_note": "Directories for SKILL.md-based skill files. Leave empty to use defaults.",
+    "bundled_dir": "",
+    "managed_dir": ""
+  },
+
+  "_section_channels": "========== CHANNEL PLUGINS ==========",
+
+  "telegram": {
+    "_note": "Get bot token from @BotFather on Telegram",
+    "bot_token": "YOUR_TELEGRAM_BOT_TOKEN_HERE",
+    "poll_timeout": 30
+  },
+
+  "whatsapp": {
+    "_note": "WhatsApp Business API - leave empty to disable",
+    "phone_number_id": "",
+    "access_token": "",
+    "bridge_url": ""
+  },
+
+  "_section_ai": "========== AI PROVIDERS ==========",
+
+  "claude": {
+    "_note": "Get API key from console.anthropic.com",
+    "api_key": "YOUR_ANTHROPIC_API_KEY_HERE",
+    "model": "claude-sonnet-4-20250514",
+    "_alternatives": "claude-opus-4, claude-haiku-4",
+    "max_tokens": 4096,
+    "temperature": 1.0
+  },
+
+  "llamacpp": {
+    "_note": "Llama.cpp server with OpenAI-compatible API. Use instead of claude for fully local inference.",
+    "url": "http://localhost:8080",
+    "api_key": "",
+    "model": "local-model"
+  },
+
+  "_section_gateway": "========== GATEWAY SERVER ==========",
+
+  "gateway": {
+    "_note": "WebSocket gateway for API/programmatic access with built-in web UI",
+    "port": 18789,
+    "bind": "0.0.0.0",
+    "_bind_note": "Use 127.0.0.1 for local only, 0.0.0.0 for all interfaces",
+    "index_file": "src/plugins/gateway/ui/index.html",
+    "auth": {
+      "token": "",
+      "_note": "Set a secure token to require authentication. Leave empty to disable."
+    }
+  },
+
+  "_section_tools": "========== TOOL PLUGINS ==========",
+
+  "browser": {
+    "_note": "Built-in HTTP client for web browsing and content extraction",
+    "user_agent": "OpenCrank/0.5.0",
+    "timeout": 30,
+    "max_redirects": 5
+  },
+
+  "memory": {
+    "_note": "SQLite-backed memory with BM25 full-text search and task management",
+    "chunk_tokens": 400,
+    "chunk_overlap": 80,
+    "max_results": 10,
+    "db_path": ".opencrank/memory.db"
+  },
+
+  "_section_global": "========== GLOBAL SETTINGS ==========",
+
+  "session": {
+    "_note": "Conversation session settings",
+    "max_history": 20,
+    "timeout": 3600
+  },
+
+  "rate_limit": {
+    "_note": "Token-bucket rate limiting per user",
+    "max_tokens": 10,
+    "refill_rate": 2
+  },
+
+  "_quick_configs": "========== QUICK START EXAMPLES ==========",
+  "_telegram_bot": "Telegram Bot: plugins=['telegram','claude']",
+  "_gateway_ui": "Gateway + Web UI: plugins=['gateway','claude']",
+  "_local_llm": "Local LLM: plugins=['gateway','llamacpp']",
+  "_local_test": "Minimal Test: plugins=['claude']"
+}

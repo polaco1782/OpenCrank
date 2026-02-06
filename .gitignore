@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+bin/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Debug files
+*.dSYM/
+
+# Config with secrets
+config.json
+*.o
+*.so
+.opencrank/
+build/
+bin/

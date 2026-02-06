@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenCrank Control</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --bg-tertiary: #383838;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --border: #404040;
+            --accent: #00a8ff;
+            --success: #00c851;
+            --error: #ff4444;
+            --msg-sent: #005a9e;
+            --msg-received: #2d2d2d;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        header {
+            background: var(--bg-secondary);
+            padding: 15px 20px;
+            border-bottom: 2px solid var(--border);
+            flex-shrink: 0;
+        }
+        
+        h1 {
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--error);
+        }
+        
+        .status.connected {
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-primary);
+        }
+        
+        .card {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 15px;
+        }
+        
+        .card h2 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: var(--accent);
+        }
+        
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+        
+        .stat-label {
+            color: var(--text-secondary);
+        }
+        
+        .stat-value {
+            font-weight: 600;
+        }
+        
+        .chat-header {
+            background: var(--bg-secondary);
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        
+        .chat-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .chat-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .message {
+            max-width: 70%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+        
+        .message.sent {
+            align-self: flex-end;
+            background: var(--msg-sent);
+            border-bottom-right-radius: 4px;
+        }
+        
+        .message.received {
+            align-self: flex-start;
+            background: var(--msg-received);
+            border-bottom-left-radius: 4px;
+            border: 1px solid var(--border);
+        }
+        
+        .message-meta {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .message-sender {
+            font-weight: 600;
+            color: var(--accent);
+        }
+        
+        .message-time {
+            opacity: 0.7;
+        }
+        
+        .chat-input-container {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 15px 20px;
+            flex-shrink: 0;
+        }
+        
+        .chat-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .input-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .input-group label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .input-group select,
+        .input-group input[type="text"] {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+        
+        .input-group select:focus,
+        .input-group input[type="text"]:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        .message-input-row {
+            display: flex;
+            gap: 10px;
+        }
+        
+        #messageInput {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 10px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+        }
+        
+        #messageInput:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        #sendBtn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        #sendBtn:hover {
+            background: #0095e8;
+        }
+        
+        #sendBtn:disabled {
+            background: var(--border);
+            cursor: not-allowed;
+        }
+        
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+        
+        .log-entry {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            padding: 3px 0;
+            color: var(--text-secondary);
+        }
+        
+        .log-entry.error { color: var(--error); }
+        .log-entry.warn { color: #ffa502; }
+        .log-entry.info { color: var(--text-primary); }
+        
+        .typing-indicator {
+            align-self: flex-start;
+            background: var(--msg-received);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            border-bottom-left-radius: 4px;
+            padding: 10px 14px;
+            max-width: 70px;
+            display: none;
+        }
+        
+        .typing-indicator.active {
+            display: block;
+        }
+        
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.7; }
+            30% { transform: translateY(-10px); opacity: 1; }
+        }
+        
+        #logs {
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            <span class="status" id="status"></span>
+            OpenCrank Gateway
+        </h1>
+    </header>
+    
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="card">
+                <h2>Status</h2>
+                <div class="stat">
+                    <span class="stat-label">Connection</span>
+                    <span class="stat-value" id="conn-status">Disconnected</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Protocol</span>
+                    <span class="stat-value" id="protocol">-</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Server</span>
+                    <span class="stat-value" id="version">-</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Health</h2>
+                <div class="stat">
+                    <span class="stat-label">Clients</span>
+                    <span class="stat-value" id="clients">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Port</span>
+                    <span class="stat-value" id="port">-</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Activity Log</h2>
+                <div id="logs"></div>
+            </div>
+        </div>
+        
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="chat-title">Chat Interface</div>
+                <div class="chat-subtitle">Full-duplex communication with all registered plugins</div>
+            </div>
+            
+            <div class="messages" id="messages">
+                <div class="empty-state">
+                    <div class="empty-state-icon">💬</div>
+                    <p>No messages yet</p>
+                    <p style="font-size: 12px; margin-top: 8px;">Send a message to start chatting</p>
+                </div>
+            </div>
+            
+            <div class="typing-indicator" id="typingIndicator">
+                <div class="typing-dots">
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                </div>
+            </div>
+            
+            <div class="chat-input-container">
+                <!-- Channel and recipient selection removed: messages go to all channels -->
+                <div class="message-input-row">
+                    <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
+                    <button id="sendBtn" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ws = null;
+        let connected = false;
+        let messageIdCounter = 1;
+        
+        const statusEl = document.getElementById('status');
+        const connStatusEl = document.getElementById('conn-status');
+        const protocolEl = document.getElementById('protocol');
+        const versionEl = document.getElementById('version');
+        const clientsEl = document.getElementById('clients');
+        const portEl = document.getElementById('port');
+        const logsEl = document.getElementById('logs');
+        const messagesEl = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const typingIndicator = document.getElementById('typingIndicator');
+        function log(message, level = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logsEl.appendChild(entry);
+            logsEl.scrollTop = logsEl.scrollHeight;
+            
+            // Limit log entries to 50
+            while (logsEl.children.length > 50) {
+                logsEl.removeChild(logsEl.firstChild);
+            }
+        }
+        
+        function addMessage(msg, type = 'received') {
+            // Remove empty state if present
+            const emptyState = messagesEl.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+            
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${type}`;
+            
+            const textEl = document.createElement('div');
+            textEl.textContent = msg.text;
+            messageEl.appendChild(textEl);
+            
+            const metaEl = document.createElement('div');
+            metaEl.className = 'message-meta';
+            
+            const time = new Date(msg.timestamp * 1000).toLocaleTimeString();
+            
+            if (type === 'received') {
+                const senderEl = document.createElement('span');
+                senderEl.className = 'message-sender';
+                senderEl.textContent = msg.from_name || msg.from;
+                metaEl.appendChild(senderEl);
+            }
+            
+            const timeEl = document.createElement('span');
+            timeEl.className = 'message-time';
+            timeEl.textContent = time;
+            metaEl.appendChild(timeEl);
+            
+            messageEl.appendChild(metaEl);
+            messagesEl.appendChild(messageEl);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.hostname}:${window.location.port || 18789}/ws`;
+            
+            log(`Connecting to ${wsUrl}...`);
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                log('Connected', 'info');
+                sendHello();
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleMessage(msg);
+                } catch (e) {
+                    log('Parse error: ' + e.message, 'error');
+                }
+            };
+            
+            ws.onerror = (error) => {
+                log('WebSocket error', 'error');
+            };
+            
+            ws.onclose = () => {
+                connected = false;
+                statusEl.classList.remove('connected');
+                connStatusEl.textContent = 'Disconnected';
+                sendBtn.disabled = true;
+                log('Disconnected', 'warn');
+                
+                setTimeout(connect, 5000);
+            };
+        }
+        
+        function sendHello() {
+            const hello = {
+                type: 'hello',
+                params: {
+                    minProtocol: 1,
+                    maxProtocol: 1,
+                    client: {
+                        id: 'gateway-ui-' + Date.now(),
+                        version: '1.0.0',
+                        platform: 'web',
+                        mode: 'chat'
+                    }
+                }
+            };
+            ws.send(JSON.stringify(hello));
+        }
+        
+        function handleMessage(msg) {
+            if (msg.type === 'hello-ok') {
+                connected = true;
+                statusEl.classList.add('connected');
+                connStatusEl.textContent = 'Connected';
+                protocolEl.textContent = `v${msg.protocol}`;
+                versionEl.textContent = msg.server.version || 'Unknown';
+                sendBtn.disabled = false;
+                log('Handshake complete', 'info');
+                
+                callMethod('health.get', {});
+            } else if (msg.type === 'result') {
+                handleResult(msg);
+            } else if (msg.type === 'event') {
+                handleEvent(msg);
+            } else if (msg.type === 'error') {
+                log(`Error: ${msg.error.message}`, 'error');
+            }
+        }
+        
+        function handleResult(msg) {
+            const result = msg.result;
+            
+            if (result.clients !== undefined) {
+                clientsEl.textContent = result.clients;
+            }
+            if (result.port) {
+                portEl.textContent = result.port;
+            }
+            if (result.success !== undefined) {
+                if (result.success) {
+                    log('Message sent: ' + result.message_id, 'info');
+                } else {
+                    log('Send failed: ' + result.error, 'error');
+                }
+            }
+        }
+        
+        function handleEvent(msg) {
+            if (msg.event === 'chat.message') {
+                // Incoming message from a channel
+                const chatMsg = msg.payload;
+                log(`Message from ${chatMsg.from_name} on ${chatMsg.channel}`, 'info');
+                addMessage(chatMsg, 'received');
+            } else if (msg.event === 'chat.typing') {
+                // Typing indicator
+                const typingData = msg.payload;
+                if (typingData.typing) {
+                    showTyping(typingData.channel, typingData.chat_id);
+                } else {
+                    hideTyping();
+                }
+            } else {
+                log(`Event: ${msg.event}`, 'info');
+            }
+        }
+        
+        let typingTimeout = null;
+        function showTyping(channel, chatId) {
+            const emptyState = messagesDiv.querySelector('.empty-state');
+            if (emptyState) emptyState.style.display = 'none';
+
+            typingIndicator.classList.add('active');
+            setTimeout(() => {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight + 100;
+            }, 10);
+
+            // Auto-hide after 5 seconds if no update
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                hideTyping();
+            }, 5000);
+        }
+        
+        function hideTyping() {
+            typingIndicator.classList.remove('active');
+            clearTimeout(typingTimeout);
+        }
+        
+        let callId = 1;
+        function callMethod(method, params) {
+            const msg = {
+                type: 'call',
+                method: method,
+                params: params,
+                id: `req-${callId++}`
+            };
+            ws.send(JSON.stringify(msg));
+        }
+        
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) {
+                log('Please enter a message', 'warn');
+                return;
+            }
+            if (!connected) {
+                log('Not connected', 'error');
+                return;
+            }
+            // Add to UI immediately as sent message
+            addMessage({
+                text: text,
+                timestamp: Math.floor(Date.now() / 1000),
+                from_name: 'You'
+            }, 'sent');
+            // Send via gateway
+            callMethod('chat.send', {
+                text: text
+            });
+            // Clear input
+            messageInput.value = '';
+            messageInput.focus();
+        }
+        
+        // Event listeners
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        // Connect on load
+        log('Initializing...', 'info');
+        connect();
+        
+        // Refresh health every 10 seconds
+        setInterval(() => {
+            if (connected) {
+                callMethod('health.get', {});
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

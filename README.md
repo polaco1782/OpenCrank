@@ -14,7 +14,8 @@
   <a href="#agentic-loop">Agentic Loop</a> •
   <a href="#skills-system">Skills System</a> •
   <a href="#plugins">Plugins</a> •
-  <a href="#configuration">Configuration</a>
+  <a href="#configuration">Configuration</a> •
+  <a href="#running-llamacpp-with-glm-47-flash">GLM 4.7 Setup</a>
 </p>
 
 ---
@@ -479,6 +480,152 @@ All configuration lives in a single `config.json` file. See [`config.example.jso
 
 ---
 
+## Running Llama.cpp with GLM 4.7 Flash
+
+OpenCrank supports local AI inference via the `llamacpp` plugin, which connects to a Llama.cpp server running an OpenAI-compatible API. This guide shows how to set up and run **GLM 4.7 Flash** — Z.ai's 30B MoE reasoning model optimized for local deployment.
+
+### Why GLM 4.7 Flash?
+
+- **Best-in-class performance**: Leads SWE-Bench, GPQA, coding, and reasoning benchmarks
+- **Efficient**: Uses ~3.6B active parameters (30B total MoE)
+- **Large context**: Supports up to 200K tokens
+- **Tool-calling ready**: Excellent for agentic workflows
+- **Runs locally**: Works with 24GB RAM/VRAM (4-bit quantized), 32GB for full precision
+
+### Setup Instructions
+
+#### 1. Build Llama.cpp
+
+Install dependencies and build the latest Llama.cpp with GPU support:
+
+```bash
+# Install build dependencies
+sudo apt-get update
+sudo apt-get install pciutils build-essential cmake curl libcurl4-openssl-dev -y
+
+# Clone and build llama.cpp (with CUDA support)
+git clone https://github.com/ggml-org/llama.cpp
+cmake llama.cpp -B llama.cpp/build \
+    -DBUILD_SHARED_LIBS=OFF -DGGML_CUDA=ON
+
+cmake --build llama.cpp/build --config Release -j \
+    --clean-first --target llama-cli llama-server
+
+# Copy binaries
+cp llama.cpp/build/bin/llama-* llama.cpp/
+```
+
+**Note**: Change `-DGGML_CUDA=ON` to `-DGGML_CUDA=OFF` if you don't have a GPU or want CPU-only inference.
+
+#### 2. Download GLM 4.7 Flash GGUF
+
+Install the Hugging Face CLI and download the 4-bit quantized model:
+
+```bash
+pip install -U huggingface_hub
+
+# Download the recommended 4-bit model (~18GB)
+huggingface-cli download unsloth/GLM-4.7-Flash-GGUF \
+    --local-dir models/GLM-4.7-Flash-GGUF \
+    --include "*UD-Q4_K_XL*"
+```
+
+**Other quantization options**: You can choose different quantization levels (`UD-Q2_K_XL`, `UD-Q4_K_XL`, `UD-Q8_0`, etc.) based on your available memory. The 4-bit version requires ~18GB RAM/VRAM and provides the best quality-to-size ratio.
+
+#### 3. Start Llama.cpp Server
+
+Launch the Llama.cpp server with OpenAI-compatible API:
+
+```bash
+./llama.cpp/llama-server \
+    --model models/GLM-4.7-Flash-GGUF/GLM-4.7-Flash-UD-Q4_K_XL.gguf \
+    --alias "GLM-4.7-Flash" \
+    --fit on \
+    --seed 3407 \
+    --temp 0.7 \
+    --top-p 1.0 \
+    --min-p 0.01 \
+    --repeat-penalty 1.0 \
+    --ctx-size 16384 \
+    --port 8080 \
+    --jinja
+```
+
+**Important parameters:**
+- `--temp 0.7 --top-p 1.0`: Recommended for tool-calling and agentic use cases
+- `--min-p 0.01`: Required for llama.cpp (default is 0.05 which causes issues)
+- `--repeat-penalty 1.0`: Disables repeat penalty (critical for GLM 4.7)
+- `--jinja`: Use Jinja templating for chat formatting
+- `--ctx-size 16384`: Context window (can be increased up to 202,752)
+
+**For general conversation** (non-agentic use), use: `--temp 1.0 --top-p 0.95`
+
+#### 4. Configure OpenCrank
+
+Update your `config.json` to use the llamacpp plugin:
+
+```json
+{
+  "plugins": ["gateway", "llamacpp"],
+  "llamacpp": {
+    "url": "http://localhost:8080",
+    "model": "GLM-4.7-Flash"
+  },
+  "gateway": {
+    "port": 18789,
+    "bind": "0.0.0.0"
+  },
+  "workspace_dir": ".",
+  "session": {
+    "max_history": 20,
+    "timeout": 3600
+  }
+}
+```
+
+#### 5. Run OpenCrank
+
+```bash
+make                     # Build if not already done
+./bin/opencrank --config config.json
+```
+
+The gateway web UI will be available at `http://localhost:18789`. You can now chat with GLM 4.7 Flash running entirely locally!
+
+### Tips & Troubleshooting
+
+**Repetition or looping outputs?**
+- Ensure you're using the latest GGUF (Jan 21+ update fixed a `scoring_func` bug)
+- Verify `--repeat-penalty 1.0` is set
+- Try re-downloading the model: `huggingface-cli download unsloth/GLM-4.7-Flash-GGUF --local-dir models/GLM-4.7-Flash-GGUF --include "*UD-Q4_K_XL*"`
+
+**Out of memory?**
+- Use a lower quantization: `UD-Q2_K_XL` instead of `UD-Q4_K_XL`
+- Reduce `--ctx-size` to 8192 or 4096
+- Enable CPU offloading with `--n-gpu-layers 0` (slower but uses less VRAM)
+
+**Slow inference?**
+- Enable GPU acceleration by rebuilding with `-DGGML_CUDA=ON`
+- Reduce batch size: `--batch-size 512`
+- Use a smaller quantized model
+
+**Tool calling not working?**
+- Ensure temperature is set to `0.7` and `--jinja` is enabled
+- Check that OpenCrank's agentic loop is functioning (use `/info` command)
+- Review logs for tool call parsing errors
+
+### Alternative: Using Ollama (Not Recommended)
+
+While GLM 4.7 Flash can technically run on Ollama, **chat template compatibility issues** currently make Ollama unreliable for this model. Use Llama.cpp directly as described above for best results.
+
+### References
+
+- [GLM 4.7 Flash Official Guide](https://unsloth.ai/docs/models/glm-4.7-flash)
+- [Unsloth GLM 4.7 Flash GGUF Models](https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF)
+- [Llama.cpp GitHub](https://github.com/ggml-org/llama.cpp)
+
+---
+
 ## Bot Commands
 
 | Command | Description |
@@ -568,3 +715,4 @@ MIT License
 ## Acknowledgments
 
 Inspired by [OpenClaw](https://github.com/openclaw/openclaw) — a TypeScript-based personal AI assistant.
+Huge thanks to unsloth.ai for the best optimized models! (https://unsloth.ai/docs/models/glm-4.7-flash)

@@ -12,7 +12,6 @@
 #include <opencrank/core/logger.hpp>
 #include <opencrank/core/utils.hpp>
 #include <opencrank/core/registry.hpp>
-#include <opencrank/core/channel.hpp>
 
 // Crow header-only library (C++17 required)
 #include "deps/crow_all.h"
@@ -293,6 +292,36 @@ bool GatewayPlugin::init(const Config& cfg) {
     return true;
 }
 
+ChannelCapabilities GatewayPlugin::capabilities() const {
+    ChannelCapabilities caps;
+    caps.supports_groups = false;
+    caps.supports_reactions = false;
+    caps.supports_media = false;
+    caps.supports_edit = false;
+    caps.supports_delete = false;
+    caps.supports_typing = false;
+    return caps;
+}
+
+SendResult GatewayPlugin::send_message(const std::string& to, const std::string& text) {
+    // Broadcast to all gateway clients
+    Json payload = Json::object();
+    payload["to"] = to;
+    payload["text"] = text;
+    broadcast("chat.outgoing", payload);
+    return SendResult::ok("gw_" + std::to_string(std::time(nullptr)));
+}
+
+SendResult GatewayPlugin::send_message(const std::string& to, const std::string& text, const std::string& reply_to) {
+    // Broadcast to all gateway clients
+    Json payload = Json::object();
+    payload["to"] = to;
+    payload["text"] = text;
+    payload["reply_to"] = reply_to;
+    broadcast("chat.outgoing", payload);
+    return SendResult::ok("gw_" + std::to_string(std::time(nullptr)));
+}
+
 void GatewayPlugin::shutdown() {
     if (!initialized_) return;
     
@@ -314,14 +343,10 @@ void GatewayPlugin::shutdown() {
     initialized_ = false;
 }
 
-bool GatewayPlugin::start(int port) {
+bool GatewayPlugin::start() {
     if (running_) {
         LOG_WARN("Gateway already running");
         return true;
-    }
-    
-    if (port > 0) {
-        port_ = port;
     }
     
     if (!ws_server_) {
@@ -340,8 +365,8 @@ bool GatewayPlugin::start(int port) {
     return true;
 }
 
-void GatewayPlugin::stop() {
-    if (!running_) return;
+bool GatewayPlugin::stop() {
+    if (!running_) return true;
     
     LOG_INFO("Stopping gateway...");
     
@@ -350,12 +375,13 @@ void GatewayPlugin::stop() {
     }
     
     running_ = false;
+    return true;
 }
 
 void GatewayPlugin::poll() {
     // Auto-start on first poll if not running
     if (!running_ && initialized_ && ws_server_) {
-        start(port_);
+        start();
     }
     
     // Crow runs in its own thread, no polling needed
@@ -571,7 +597,7 @@ Json GatewayPlugin::handle_hello(GatewayClient* client, const Json& params) {
     return response;
 }
 
-Json GatewayPlugin::handle_chat_send(GatewayClient* /* client */, const Json& params) {
+Json GatewayPlugin::handle_chat_send(GatewayClient* client, const Json& params) {
     Json result = Json::object();
     
     // Only 'text' is required now
@@ -585,56 +611,30 @@ Json GatewayPlugin::handle_chat_send(GatewayClient* /* client */, const Json& pa
 
     LOG_INFO("Gateway chat.send: text=%s", text.c_str());
 
-    // Check if we have a recent chat to route to
-    if (recent_chat_id_.empty()) {
-        result["error"] = "No active chat - send a message from a channel first";
-        LOG_WARN("[Gateway] Cannot send - no recent chat tracked");
-        return result;
+    // Create a Message object to send through the system for AI processing
+    Message msg;
+    msg.id = "gw_" + std::to_string(std::time(nullptr)) + "_" + client->conn_id();
+    msg.channel = "gateway";
+    msg.from = client->client_id().empty() ? client->conn_id() : client->client_id();
+    msg.from_name = "Gateway User";
+    msg.to = recent_chat_id_.empty() ? msg.from : recent_chat_id_;
+    msg.text = text;
+    msg.chat_type = "direct";
+    msg.timestamp = std::time(nullptr);
+    if (!reply_to.empty()) {
+        msg.reply_to_id = reply_to;
     }
 
-    LOG_DEBUG("[Gateway] Routing to recent chat: %s", recent_chat_id_.c_str());
+    LOG_DEBUG("[Gateway] Creating message for AI processing: from=%s to=%s", 
+              msg.from.c_str(), msg.to.c_str());
 
-    // Broadcast the message to ALL registered channels
-    // Each channel will route to the recent chat_id
-    auto& registry = PluginRegistry::instance();
-    auto channels = registry.channels();  // Non-const copy
+    // Fire the message through the channel callback (inherited from ChannelPlugin)
+    // This will route it through the message handler for AI processing
+    emit_message(msg);
     
-    bool any_success = false;
-    std::vector<std::string> message_ids;
-    std::vector<std::string> errors;
-    
-    for (auto* channel : channels) {
-        if (!channel) continue;
-        
-        std::string channel_id = channel->channel_id();
-        SendResult send_result;
-        
-        if (!reply_to.empty()) {
-            send_result = channel->send_message(recent_chat_id_, text, reply_to);
-        } else {
-            send_result = channel->send_message(recent_chat_id_, text);
-        }
-        
-        if (send_result.success) {
-            any_success = true;
-            message_ids.push_back(send_result.message_id);
-            LOG_DEBUG("[Gateway] Message sent successfully to %s:%s - msg_id=%s", 
-                     channel_id.c_str(), recent_chat_id_.c_str(), send_result.message_id.c_str());
-        } else {
-            errors.push_back("[" + channel_id + "] " + send_result.error);
-            LOG_ERROR("Failed to send message to %s:%s - %s", 
-                     channel_id.c_str(), recent_chat_id_.c_str(), send_result.error.c_str());
-        }
-    }
-    
-    if (any_success) {
-        result["success"] = true;
-        result["message_ids"] = message_ids;
-        result["recent_chat"] = recent_chat_id_;
-    } else {
-        result["success"] = false;
-        result["error"] = errors;
-    }
+    result["success"] = true;
+    result["message_id"] = msg.id;
+    result["chat_id"] = msg.to;
     
     return result;
 }

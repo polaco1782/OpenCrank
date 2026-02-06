@@ -2,6 +2,7 @@
 #define opencrank_PLUGINS_GATEWAY_GATEWAY_HPP
 
 #include "../../core/plugin.hpp"
+#include "../../core/channel.hpp"
 #include "../../core/types.hpp"
 #include "../../core/json.hpp"
 #include <string>
@@ -18,7 +19,7 @@ class GatewayClient;
 // Gateway Server Plugin
 // Implements a WebSocket-based gateway for remote agent control
 // Compatible with opencrank gateway protocol
-class GatewayPlugin : public Plugin {
+class GatewayPlugin : public ChannelPlugin {
 public:
     GatewayPlugin();
     virtual ~GatewayPlugin();
@@ -34,6 +35,15 @@ public:
     virtual void shutdown();
     virtual void poll();  // Poll WebSocket server
     
+    // ChannelPlugin interface
+    virtual const char* channel_id() const { return "gateway"; }
+    virtual ChannelCapabilities capabilities() const;
+    virtual ChannelStatus status() const { return running_ ? ChannelStatus::RUNNING : ChannelStatus::STOPPED; }
+    virtual bool start();  // Start the gateway server
+    virtual bool stop();   // Stop the gateway server
+    virtual SendResult send_message(const std::string& to, const std::string& text);
+    virtual SendResult send_message(const std::string& to, const std::string& text, const std::string& reply_to);
+    
     // Receive all incoming messages for routing to gateway clients
     virtual void on_incoming_message(const Message& msg) override;
     
@@ -42,12 +52,8 @@ public:
                                      const std::string& chat_id,
                                      bool typing) override;
     
-    // Gateway operations
-    bool start(int port = 18789);
-    void stop();
-    bool is_running() const { return running_; }
-    
     // Get server status
+    bool is_running() const { return running_; }
     int port() const { return port_; }
     size_t client_count() const;
     const std::string& index_filename() const { return index_filename_; }

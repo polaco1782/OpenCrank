@@ -8,6 +8,7 @@ LlamaCppAI::LlamaCppAI()
     : server_url_("http://localhost:8080")
     , api_key_()
     , default_model_("local-model")
+    , max_context_chars_(16000)  // Conservative default: ~4K tokens * 4 chars/token
     , initialized_(false)
 {}
 
@@ -26,13 +27,17 @@ bool LlamaCppAI::init(const Config& cfg) {
         default_model_ = model;
     }
     
+    // Context size configuration (in tokens — we multiply by 4 for char estimate)
+    int context_tokens = static_cast<int>(cfg.get_int("llamacpp.context_size", 4096));
+    max_context_chars_ = static_cast<size_t>(context_tokens) * 4;
+    
     // Remove trailing slash from URL
     while (!server_url_.empty() && server_url_[server_url_.length() - 1] == '/') {
         server_url_ = server_url_.substr(0, server_url_.length() - 1);
     }
     
-    LOG_INFO("Llama.cpp AI initialized with server: %s, model: %s", 
-             server_url_.c_str(), default_model_.c_str());
+    LOG_INFO("Llama.cpp AI initialized with server: %s, model: %s, context: %d tokens (~%zu chars)", 
+             server_url_.c_str(), default_model_.c_str(), context_tokens, max_context_chars_);
     initialized_ = true;
     return true;
 }
@@ -81,6 +86,13 @@ CompletionResult LlamaCppAI::chat(
     
     LOG_DEBUG("[LlamaCpp] Starting chat request with %zu messages", messages.size());
     
+    // Proactively trim messages to fit within context budget
+    std::vector<ConversationMessage> trimmed_messages = trim_messages_to_fit(messages, opts.system_prompt);
+    if (trimmed_messages.size() < messages.size()) {
+        LOG_INFO("[LlamaCpp] Trimmed conversation from %zu to %zu messages to fit context window",
+                 messages.size(), trimmed_messages.size());
+    }
+    
     // Build OpenAI-compatible request
     Json request = Json::object();
     
@@ -110,8 +122,8 @@ CompletionResult LlamaCppAI::chat(
     }
     
     LOG_DEBUG("[LlamaCpp] === Messages being sent to AI ===");
-    for (size_t i = 0; i < messages.size(); ++i) {
-        const ConversationMessage& msg = messages[i];
+    for (size_t i = 0; i < trimmed_messages.size(); ++i) {
+        const ConversationMessage& msg = trimmed_messages[i];
         
         Json m = Json::object();
         m["role"] = role_to_string(msg.role);
@@ -286,6 +298,110 @@ CompletionResult LlamaCppAI::chat(
               result.content.size(), result.content.c_str(),
               result.content.size() > 500 ? "..." : "");
     LOG_DEBUG("[LlamaCpp] === End AI Response ===");
+    
+    return result;
+}
+
+size_t LlamaCppAI::estimate_request_chars(
+    const std::vector<ConversationMessage>& messages,
+    const std::string& system_prompt) const
+{
+    size_t total = system_prompt.size();
+    for (size_t i = 0; i < messages.size(); ++i) {
+        total += messages[i].content.size();
+        total += 20; // Role tags, formatting overhead per message
+    }
+    return total;
+}
+
+std::vector<ConversationMessage> LlamaCppAI::trim_messages_to_fit(
+    const std::vector<ConversationMessage>& messages,
+    const std::string& system_prompt) const
+{
+    size_t total_chars = estimate_request_chars(messages, system_prompt);
+    
+    // Leave room for the response (reserve ~25% of context for output)
+    size_t budget = max_context_chars_ * 3 / 4;
+    
+    if (total_chars <= budget) {
+        return messages; // Fits fine
+    }
+    
+    LOG_WARN("[LlamaCpp] Request too large (%zu chars) for context budget (%zu chars), trimming",
+             total_chars, budget);
+    
+    if (messages.empty()) {
+        return messages;
+    }
+    
+    // Strategy: keep the first message (usually the user's initial question context)
+    // and the most recent messages, dropping middle ones.
+    // Also truncate individual large tool_result messages.
+    
+    // First pass: truncate large individual messages in a copy
+    std::vector<ConversationMessage> trimmed = messages;
+    const size_t max_single_msg = budget / 4; // No single message should use more than 25% of budget
+    
+    for (size_t i = 0; i < trimmed.size(); ++i) {
+        if (trimmed[i].content.size() > max_single_msg) {
+            // Check if it's a tool result
+            if (trimmed[i].content.find("<tool_result") != std::string::npos) {
+                std::string truncated_content = trimmed[i].content.substr(0, max_single_msg);
+                truncated_content += "\n... [content truncated to fit context window] ...";
+                trimmed[i].content = truncated_content;
+                LOG_DEBUG("[LlamaCpp] Truncated large tool_result message %zu from %zu to %zu chars",
+                          i, messages[i].content.size(), trimmed[i].content.size());
+            } else {
+                // Generic truncation
+                trimmed[i].content = trimmed[i].content.substr(0, max_single_msg) +
+                    "\n... [truncated] ...";
+            }
+        }
+    }
+    
+    // Re-estimate after individual truncation
+    total_chars = estimate_request_chars(trimmed, system_prompt);
+    if (total_chars <= budget) {
+        return trimmed;
+    }
+    
+    // Second pass: drop middle messages, keeping first and last
+    std::vector<ConversationMessage> result;
+    result.push_back(trimmed[0]);
+    
+    // Add context truncation note as assistant message to maintain alternation
+    if (trimmed[0].role == MessageRole::USER) {
+        result.push_back(ConversationMessage::assistant(
+            "[Earlier conversation truncated to fit context window.]"
+        ));
+    }
+    
+    // Walk backwards from the end, adding messages until we hit the budget
+    std::vector<ConversationMessage> tail;
+    size_t used = estimate_request_chars(result, system_prompt);
+    
+    for (size_t i = trimmed.size(); i > 1; --i) {
+        size_t idx = i - 1;
+        size_t msg_cost = trimmed[idx].content.size() + 20;
+        if (used + msg_cost <= budget) {
+            tail.push_back(trimmed[idx]);
+            used += msg_cost;
+        } else {
+            break;
+        }
+    }
+    
+    // Reverse tail and append
+    for (size_t i = tail.size(); i > 0; --i) {
+        // Ensure proper alternation
+        if (!result.empty() && result.back().role == tail[i - 1].role) {
+            continue; // Skip to avoid consecutive same-role
+        }
+        result.push_back(tail[i - 1]);
+    }
+    
+    LOG_INFO("[LlamaCpp] Trimmed from %zu to %zu messages (est. %zu chars)",
+             messages.size(), result.size(), estimate_request_chars(result, system_prompt));
     
     return result;
 }

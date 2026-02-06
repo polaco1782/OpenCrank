@@ -65,7 +65,17 @@ private:
     std::string server_url_;
     std::string api_key_;
     std::string default_model_;
+    size_t max_context_chars_;   // Approx char limit for context (chars ≈ tokens * 4)
     bool initialized_;
+    
+    // Estimate total character count of a request to proactively avoid context overflow
+    size_t estimate_request_chars(const std::vector<ConversationMessage>& messages,
+                                  const std::string& system_prompt) const;
+    
+    // Trim oldest non-system messages to fit within context budget
+    std::vector<ConversationMessage> trim_messages_to_fit(
+        const std::vector<ConversationMessage>& messages,
+        const std::string& system_prompt) const;
 };
 
 } // namespace opencrank

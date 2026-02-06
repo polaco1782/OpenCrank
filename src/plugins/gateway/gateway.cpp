@@ -299,8 +299,14 @@ ChannelCapabilities GatewayPlugin::capabilities() const {
     caps.supports_media = false;
     caps.supports_edit = false;
     caps.supports_delete = false;
-    caps.supports_typing = false;
+    caps.supports_typing = true;
     return caps;
+}
+
+SendResult GatewayPlugin::send_typing_action(const std::string& to) {
+    // Broadcast typing indicator to all connected WebSocket clients
+    send_typing_event("gateway", to, true);
+    return SendResult::ok("");
 }
 
 SendResult GatewayPlugin::send_message(const std::string& to, const std::string& text) {

@@ -9,6 +9,7 @@
 #include <opencrank/core/utils.hpp>
 #include <sstream>
 #include <algorithm>
+#include <set>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -699,8 +700,8 @@ std::string Agent::format_tool_result(const std::string& tool_name, const AgentT
             oss << "Content too large (" << result.output.size() << " characters). "
                 << "Stored as '" << chunk_id << "' with " << total_chunks << " chunks.\n\n";
             
-            // Include a preview (first portion)
-            size_t preview_size = std::min(config_.max_tool_result_size / 2, result.output.size());
+            // Include a preview (first portion) - keep small for context-limited models
+            size_t preview_size = std::min(static_cast<size_t>(2000), result.output.size());
             oss << "=== Preview (first " << preview_size << " characters) ===\n";
             oss << result.output.substr(0, preview_size);
             if (preview_size < result.output.size()) {
@@ -834,26 +835,39 @@ bool Agent::try_truncate_history(std::vector<ConversationMessage>& history) cons
     
     // Strategy 2: Remove older tool call/result pairs (keep first and last few messages)
     if (history.size() > 6) {
-        // Keep first 2 messages (likely original user message and first response)
-        // Keep last 2 messages (most recent context)
-        // Remove middle messages
+        // Keep first message (original user message) and build a valid alternating sequence
         std::vector<ConversationMessage> new_history;
         new_history.push_back(history[0]);
-        if (history.size() > 1) {
-            new_history.push_back(history[1]);
+        
+        // If first message is user, add a synthetic assistant response as bridge
+        if (history[0].role == MessageRole::USER) {
+            new_history.push_back(ConversationMessage::assistant(
+                "[Earlier conversation context was truncated to fit context window.]"
+            ));
         }
         
-        // Add a note about removed context
-        new_history.push_back(ConversationMessage::user(
-            "[Note: Earlier conversation history was truncated to fit context window. "
-            "Please continue based on available context.]"
-        ));
-        
-        // Add last 2 messages
-        if (history.size() >= 2) {
-            new_history.push_back(history[history.size() - 2]);
+        // Add last messages, ensuring proper alternation
+        // Find the last user message and include from there
+        size_t last_start = history.size() - 1;
+        // Walk backwards to find a user message to start from (max 4 messages back)
+        for (size_t back = 1; back <= 4 && back < history.size(); ++back) {
+            size_t idx = history.size() - back;
+            if (history[idx].role == MessageRole::USER) {
+                last_start = idx;
+                break;
+            }
         }
-        new_history.push_back(history[history.size() - 1]);
+        
+        // Ensure we don't create consecutive same-role messages
+        MessageRole last_role = new_history.back().role;
+        for (size_t i = last_start; i < history.size(); ++i) {
+            if (history[i].role == last_role) {
+                // Skip to avoid consecutive same-role messages
+                continue;
+            }
+            new_history.push_back(history[i]);
+            last_role = history[i].role;
+        }
         
         LOG_INFO("[Agent] Reduced history from %zu to %zu messages", 
                  history.size(), new_history.size());
@@ -884,6 +898,9 @@ AgentResult Agent::run(
     LOG_INFO("[Agent] Starting agentic loop for message: %.50s%s", 
              user_message.c_str(), user_message.size() > 50 ? "..." : "");
     
+    // Track initial history size so we can restore on failure
+    size_t initial_history_size = history.size();
+    
     // Add user message to history
     history.push_back(ConversationMessage::user(user_message));
     
@@ -898,6 +915,10 @@ AgentResult Agent::run(
     int token_limit_retries = 0;
     const int max_token_limit_retries = 2;
     std::string accumulated_response;
+    
+    // Track recent tool calls to detect duplicates across iterations
+    // Key: "tool_name:params_json", Value: iteration when last executed
+    std::map<std::string, int> recent_tool_calls;
     
     // Agentic loop
     while (result.iterations < config.max_iterations) {
@@ -933,15 +954,20 @@ AgentResult Agent::run(
                 
                 // If we've exhausted retries or can't truncate, fail gracefully
                 result.error = "Context window exceeded and recovery failed. Try a simpler request or use smaller data.";
-                history.pop_back();
+                // Restore history to state before this agent run
+                while (history.size() > initial_history_size) {
+                    history.pop_back();
+                }
                 return result;
             }
             
             consecutive_errors++;
             if (consecutive_errors >= config.max_consecutive_errors) {
                 result.error = "Too many consecutive AI errors: " + ai_result.error;
-                // Remove user message on failure
-                history.pop_back();
+                // Restore history to state before this agent run
+                while (history.size() > initial_history_size) {
+                    history.pop_back();
+                }
                 return result;
             }
             continue;
@@ -1038,8 +1064,48 @@ AgentResult Agent::run(
         std::ostringstream results_oss;
         bool should_continue = true;
         
+        // Deduplicate tool calls within this response
+        std::set<std::string> seen_in_response;
+        
         for (size_t i = 0; i < calls.size(); ++i) {
             const ParsedToolCall& call = calls[i];
+            
+            // Build a dedup key from tool name + params
+            std::string dedup_key = call.tool_name + ":" + 
+                (call.valid ? call.params.dump() : call.raw_content);
+            
+            // Skip exact duplicates within the same response
+            if (seen_in_response.count(dedup_key)) {
+                LOG_WARN("[Agent] Skipping duplicate tool call in same response: %s",
+                         call.tool_name.c_str());
+                results_oss << "<tool_result name=\"" << call.tool_name 
+                            << "\" success=\"true\">\n"
+                            << "(Duplicate call skipped - same tool with same parameters "
+                            << "was already called in this response)\n</tool_result>\n";
+                continue;
+            }
+            seen_in_response.insert(dedup_key);
+            
+            // Warn about repeated calls across iterations (but still execute)
+            std::map<std::string, int>::iterator prev = recent_tool_calls.find(dedup_key);
+            if (prev != recent_tool_calls.end()) {
+                int prev_iter = prev->second;
+                LOG_WARN("[Agent] Tool '%s' called with same params as iteration %d (now %d)",
+                         call.tool_name.c_str(), prev_iter, result.iterations);
+                // If called in the immediately previous iteration with same params, skip
+                if (prev_iter == result.iterations - 1) {
+                    LOG_WARN("[Agent] Skipping repeated tool call from consecutive iteration: %s",
+                             call.tool_name.c_str());
+                    results_oss << "<tool_result name=\"" << call.tool_name 
+                                << "\" success=\"true\">\n"
+                                << "(This exact tool call was already made in the previous iteration. "
+                                << "The result has not changed. Please use the previous result "
+                                << "or try a different approach.)\n</tool_result>\n";
+                    continue;
+                }
+            }
+            recent_tool_calls[dedup_key] = result.iterations;
+            
             result.tool_calls_made++;
             
             // Track tool usage

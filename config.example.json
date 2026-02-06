@@ -49,6 +49,7 @@
 
   "llamacpp": {
     "_note": "Llama.cpp server with OpenAI-compatible API. Use instead of claude for fully local inference.",
+    "context_size": 32768,
     "url": "http://localhost:8080",
     "api_key": "",
     "model": "local-model"

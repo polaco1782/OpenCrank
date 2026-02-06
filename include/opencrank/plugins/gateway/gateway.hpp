@@ -43,6 +43,7 @@ public:
     virtual bool stop();   // Stop the gateway server
     virtual SendResult send_message(const std::string& to, const std::string& text);
     virtual SendResult send_message(const std::string& to, const std::string& text, const std::string& reply_to);
+    virtual SendResult send_typing_action(const std::string& to);
     
     // Receive all incoming messages for routing to gateway clients
     virtual void on_incoming_message(const Message& msg) override;

@@ -249,17 +249,16 @@ CompletionResult LlamaCppAI::chat(
                     LOG_INFO("[LlamaCpp] Native tool_call[%zu]: %s", tc, tool_name.c_str());
                     LOG_DEBUG("[LlamaCpp] Native tool_call[%zu] arguments: %s", tc, arguments.c_str());
                     
-                    // Reconstruct as <tool_call> XML format for the agent to parse
+                    // Reconstruct as JSON tool call format for the agent to parse
                     if (tc > 0) {
                         reconstructed << "\n\n";
                     }
-                    reconstructed << "<tool_call name=\"" << tool_name << "\">\n";
-                    reconstructed << arguments << "\n";
-                    reconstructed << "</tool_call>";
+                    reconstructed << "{\"tool\": \"" << tool_name << "\", ";
+                    reconstructed << "\"arguments\": " << arguments << "}";
                 }
                 
                 result.content = reconstructed.str();
-                LOG_INFO("[LlamaCpp] Reconstructed %zu native tool call(s) into <tool_call> format",
+                LOG_INFO("[LlamaCpp] Reconstructed %zu native tool call(s) into JSON format",
                          tool_calls.size());
                 LOG_DEBUG("[LlamaCpp] Reconstructed content: %.500s%s", result.content.c_str(),
                           result.content.size() > 500 ? "..." : "");
@@ -314,11 +313,10 @@ CompletionResult LlamaCppAI::chat(
                                     unescaped += json_params[i];
                                 }
                                 
-                                // Reconstruct as standard tool_call format
+                                // Reconstruct as JSON tool call format
                                 std::ostringstream reconstructed;
-                                reconstructed << "<tool_call name=\"" << tool_name << "\">\n";
-                                reconstructed << unescaped << "\n";
-                                reconstructed << "</tool_call>";
+                                reconstructed << "{\"tool\": \"" << tool_name << "\", ";
+                                reconstructed << "\"arguments\": " << unescaped << "}";
                                 
                                 result.content = reconstructed.str();
                                 LOG_INFO("[LlamaCpp] Reconstructed tool call from 'to=' pattern: %s", tool_name.c_str());
@@ -400,7 +398,7 @@ std::vector<ConversationMessage> LlamaCppAI::trim_messages_to_fit(
     for (size_t i = 0; i < trimmed.size(); ++i) {
         if (trimmed[i].content.size() > max_single_msg) {
             // Check if it's a tool result
-            if (trimmed[i].content.find("<tool_result") != std::string::npos) {
+            if (trimmed[i].content.find("[TOOL_RESULT") != std::string::npos) {
                 std::string truncated_content = trimmed[i].content.substr(0, max_single_msg);
                 truncated_content += "\n... [content truncated to fit context window] ...";
                 trimmed[i].content = truncated_content;

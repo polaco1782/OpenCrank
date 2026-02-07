@@ -343,9 +343,7 @@ std::string SkillManager::build_skill_instructions(bool /* include_skills_xml */
     oss << "1. SCAN: Review the <available_skills> section below to see what skills are available\n";
     oss << "2. MATCH: Determine if the user's request matches a skill's description\n";
     oss << "3. READ: If a skill applies, use the `read` tool to read the full SKILL.md file:\n";
-    oss << "   <tool_call name=\"read\">\n";
-    oss << "   {\"path\": \"./skills/weather/SKILL.md\"}\n";
-    oss << "   </tool_call>\n";
+    oss << "   {\"tool\": \"read\", \"arguments\": {\"path\": \"./skills/weather/SKILL.md\"}}\n";
     oss << "4. EXECUTE: Follow the instructions in the SKILL.md to complete the task\n\n";
     
     oss << "### Critical Rules:\n";
@@ -359,7 +357,7 @@ std::string SkillManager::build_skill_instructions(bool /* include_skills_xml */
     oss << "### Example Workflow:\n";
     oss << "User: \"Run this Python code: print('hello')\"\n";
     oss << "1. Scan available_skills -> find skill with python in description\n";
-    oss << "2. Read the SKILL.md file using: <tool_call name=\"read\">{\"path\": \"path/to/SKILL.md\"}</tool_call>\n";
+    oss << "2. Read the SKILL.md file using: {\"tool\": \"read\", \"arguments\": {\"path\": \"path/to/SKILL.md\"}}\n";
     oss << "3. Follow the instructions in SKILL.md (e.g., use bash tool with python3 command)\n";
     oss << "4. Return the result to the user\n\n";
     

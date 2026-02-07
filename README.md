@@ -144,7 +144,7 @@ bin/
 
 3. **Command Dispatch** — If the message starts with `/`, it's matched against registered commands (built-in or skill commands). Otherwise, it's forwarded to the AI provider.
 
-4. **Agentic Loop** — The AI response is parsed for `<tool_call>` XML tags. If found, the referenced tool is executed, results are injected back into the conversation, and the AI is called again. This repeats until the AI produces a final response with no tool calls, or the iteration limit is reached.
+4. **Agentic Loop** — The AI response is parsed for JSON tool calls (`{"tool": "...", "arguments": {...}}`). If found, the referenced tool is executed, results are injected back into the conversation, and the AI is called again. This repeats until the AI produces a final response with no tool calls, or the iteration limit is reached.
 
 5. **Response Delivery** — The final text is split into chunks (if needed) and sent back through the originating channel.
 
@@ -172,7 +172,7 @@ User Message
            │
            ▼
 ┌─────────────────────┐     ┌──────────────────────┐
-│  Parse AI response   │────►│  Has <tool_call> tags? │
+│  Parse AI response   │────►│  Has tool call JSON?  │
 └──────────────────────┘     └──────────┬───────────┘
                                   │           │
                                  Yes          No
@@ -191,23 +191,21 @@ User Message
 
 ### Tool Call Format
 
-The AI uses an XML-based format to invoke tools:
+The AI uses a JSON format to invoke tools:
 
-```xml
-<tool_call name="bash">
-  {"command": "ls -la /workspace"}
-</tool_call>
+```json
+{"tool": "bash", "arguments": {"command": "ls -la /workspace"}}
 ```
 
-Results are injected back as:
+Results are injected back as plain text:
 
-```xml
-<tool_result name="bash" success="true">
+```
+[TOOL_RESULT tool=bash success=true]
   total 42
   drwxr-xr-x  5 user user  4096 Jan 15 10:30 .
   -rw-r--r--  1 user user  1234 Jan 15 10:28 config.json
   ...
-</tool_result>
+[/TOOL_RESULT]
 ```
 
 ### Built-in Tools

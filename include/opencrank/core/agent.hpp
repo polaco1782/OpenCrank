@@ -2,17 +2,15 @@
  * opencrank C++11 - Agentic Loop
  * 
  * Implements an agentic loop that allows the AI to call tools and receive results.
- * Uses <tool_call> XML format for tool invocations.
+ * Uses JSON format for tool invocations.
  * 
  * Tool Call Format:
- *   <tool_call name="tool_name">
- *     {"param1": "value1", "param2": "value2"}
- *   </tool_call>
+ *   {"tool": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
  * 
- * Tool Result Format (injected back into conversation):
- *   <tool_result name="tool_name" success="true">
+ * Tool Result Format (injected back into conversation as plain text):
+ *   [TOOL_RESULT tool=tool_name success=true]
  *     ... result content ...
- *   </tool_result>
+ *   [/TOOL_RESULT]
  */
 #ifndef opencrank_CORE_AGENT_HPP
 #define opencrank_CORE_AGENT_HPP
@@ -102,7 +100,7 @@ struct AgentTool {
 struct ParsedToolCall {
     std::string tool_name;
     Json params;
-    std::string raw_content;  // Raw content between <tool_call> tags
+    std::string raw_content;  // Raw JSON content of the tool call
     size_t start_pos;       // Position in original text
     size_t end_pos;         // End position in original text
     bool valid;

@@ -463,25 +463,20 @@ std::string Agent::build_tools_prompt() const {
     
     std::ostringstream oss;
     oss << "## Available Tools\n\n";
-    oss << "You MUST use tools to complete tasks. Supported formats:\n\n";
-    oss << "<tool_call name=\"TOOLNAME\">\n";
-    oss << "{\"param\": \"value\"}\n";
-    oss << "</tool_call>\n\n";
-    oss << "OR shorthand:\n\n";
-    oss << "<tool_call>TOOLNAME\n";
-    oss << "{\"param\": \"value\"}\n";
-    oss << "</tool_call>\n\n";
-    
-    oss << "**CRITICAL JSON Rules:**\n";
-    oss << "1. All quotes inside JSON strings MUST be escaped with \\\\\n";
-    oss << "2. For curl commands with headers, prefer single quotes: curl -H 'Header: value'\n";
-    oss << "3. For complex JSON in curl -d, write to file first, then use curl -d @/tmp/file.json\n";
-    oss << "4. Example: {\\\"command\\\": \\\"curl -H 'Authorization: Bearer token' https://url\\\"}\\n\\n\";";
+    oss << "You MUST use tools to complete tasks. Use this JSON format:\n\n";
+    oss << "```json\n";
+    oss << "{\n";
+    oss << "  \"tool\": \"TOOLNAME\",\n";
+    oss << "  \"arguments\": {\n";
+    oss << "    \"param\": \"value\"\n";
+    oss << "  }\n";
+    oss << "}\n";
+    oss << "```\n\n";
     
     oss << "**FORMAT Rules:**\n";
-    oss << "1. Start IMMEDIATELY with <tool_call> - NO explanatory text before it\n";
-    oss << "2. Parameters must be JSON format: {\\\"key\\\": \\\"value\\\"}, NOT XML <key>value</key>\n";
-    oss << "3. You can explain AFTER the tool call, never before\n\n";
+    oss << "1. Start IMMEDIATELY with the JSON tool call - NO explanatory text before it\n";
+    oss << "2. You can call multiple tools by emitting multiple JSON objects\n";
+    oss << "3. You can explain AFTER the tool call(s), never before\n\n";
 
     oss << "### Large Content Handling\n";
     oss << "When a tool returns content too large to fit in context, it will be automatically chunked.\n";
@@ -522,353 +517,125 @@ std::string Agent::build_tools_prompt() const {
 }
 
 bool Agent::has_tool_calls(const std::string& response) const {
-    return response.find("<tool_call") != std::string::npos;
+    // Look for JSON tool call pattern: {"tool": "..."
+    return response.find("\"tool\"") != std::string::npos;
 }
 
 std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response) const {
     std::vector<ParsedToolCall> calls;
     
-    // First try standard <tool_call> format
+    // Parse JSON tool calls: {"tool": "name", "arguments": {...}}
+    // We scan for '{' characters and try to parse JSON objects that have a "tool" key.
     size_t pos = 0;
     while (pos < response.size()) {
-        // Find <tool_call
-        size_t start = response.find("<tool_call", pos);
-        if (start == std::string::npos) break;
+        // Find next '{' that could start a tool call
+        size_t brace_start = response.find('{', pos);
+        if (brace_start == std::string::npos) break;
         
-        LOG_DEBUG("[Agent] Found <tool_call at position %zu", start);
-        
-        std::string tool_name;
-        std::string name_embedded_json;  // JSON recovered from malformed name attribute
-        size_t tag_end = 0;
-        
-        // Try standard format: <tool_call name="toolname">
-        size_t name_start = response.find("name=\"", start);
-        if (name_start != std::string::npos && name_start < start + 50) {
-            name_start += 6;  // Skip past name="
-            
-            size_t name_end = response.find("\"", name_start);
-            if (name_end == std::string::npos) {
-                LOG_DEBUG("[Agent] No closing quote for name attribute, skipping");
-                pos = start + 10;
-                continue;
-            }
-            
-            tool_name = response.substr(name_start, name_end - name_start);
-            LOG_DEBUG("[Agent] Extracted raw tool name from attribute: '%s'", tool_name.c_str());
-            
-            // Recovery: detect when the model stuffs JSON args into the name attribute
-            // Pattern: <tool_call name="bash\n{"command":"..."}">
-            // The extracted "name" will contain a newline and/or '{'
-            size_t newline_in_name = tool_name.find('\n');
-            size_t brace_in_name = tool_name.find('{');
-            size_t split_pos = std::string::npos;
-            
-            if (newline_in_name != std::string::npos) {
-                split_pos = newline_in_name;
-            } else if (brace_in_name != std::string::npos && brace_in_name > 0) {
-                split_pos = brace_in_name;
-            }
-            
-            if (split_pos != std::string::npos) {
-                // The real tool name is before the split, JSON args are after
-                std::string real_name = trim_whitespace(tool_name.substr(0, split_pos));
-                
-                LOG_WARN("[Agent] Tool name '%s' contains embedded content, recovering as '%s'", 
-                         tool_name.c_str(), real_name.c_str());
-                
-                // Grab ALL raw text from the '{' in the name attribute through </tool_call>
-                // and let try_parse_json extract the JSON with its recovery logic.
-                // This is more robust than brace-tracking through C++ code with unescaped quotes.
-                size_t json_scan_start = name_start + split_pos;
-                size_t json_obj_start = response.find('{', json_scan_start);
-                if (json_obj_start != std::string::npos) {
-                    // Find </tool_call> to bound our search
-                    size_t end_tag = response.find("</tool_call>", json_obj_start);
-                    if (end_tag == std::string::npos) {
-                        end_tag = response.size();
-                    }
-                    
-                    // Collect everything from '{' to just before </tool_call>
-                    std::string raw_json_area = response.substr(json_obj_start, end_tag - json_obj_start);
-                    
-                    // The raw area likely looks like:
-                    //   {"command": "g++ ..."}">\n{}\n
-                    // We need to strip the trailing junk: ">  and the {} body between tags
-                    
-                    // Remove </arg_value> tags
-                    size_t junk_pos;
-                    while ((junk_pos = raw_json_area.find("</arg_value>")) != std::string::npos) {
-                        raw_json_area.erase(junk_pos, 12);
-                    }
-                    while ((junk_pos = raw_json_area.find("<arg_value>")) != std::string::npos) {
-                        raw_json_area.erase(junk_pos, 11);
-                    }
-                    
-                    // Try to find where the opening tag's ">" is, 
-                    // and strip everything from there onward (the between-tags content)
-                    // Look for "> pattern that closes the opening tag attribute
-                    // The pattern after the JSON is typically: }">\n  or }">   followed by {} or whitespace
-                    // We look for the LAST occurrence of "> since the JSON itself won't contain that
-                    size_t closing_attr = raw_json_area.rfind("\">");
-                    if (closing_attr != std::string::npos) {
-                        // Check if there's a } before the "> — that's the end of our JSON
-                        // Find the last } before or at closing_attr
-                        size_t last_brace = raw_json_area.rfind('}', closing_attr);
-                        if (last_brace != std::string::npos) {
-                            raw_json_area = raw_json_area.substr(0, last_brace + 1);
-                        }
-                    }
-                    
-                    name_embedded_json = trim_whitespace(raw_json_area);
-                    LOG_DEBUG("[Agent] Raw JSON area from name attr (%zu chars): %.300s%s", 
-                              name_embedded_json.size(), name_embedded_json.c_str(),
-                              name_embedded_json.size() > 300 ? "..." : "");
-                }
-                
-                tool_name = real_name;
-                
-                // Skip past everything to the closing tag area
-                // Find the > that closes the opening tag attributes
-                size_t scan = name_end;
-                while (scan < response.size() && response[scan] != '>') {
-                    scan++;
-                }
-                if (scan < response.size()) {
-                    name_end = scan;
-                }
-            }
-            
-            // Find the end of opening tag (skip past any remaining junk like </arg_value>">
-            tag_end = response.find(">", name_end);
-            if (tag_end == std::string::npos) {
-                LOG_DEBUG("[Agent] No closing > for opening tag, skipping");
-                pos = start + 10;
-                continue;
-            }
-            tag_end++;  // Move past >
-        } else {
-            // Fallback format: <tool_call>toolname (without name attribute)
-            LOG_DEBUG("[Agent] No name attribute, trying fallback format: <tool_call>toolname");
-            size_t bracket_end = response.find(">", start);
-            if (bracket_end == std::string::npos) {
-                LOG_DEBUG("[Agent] No closing > for <tool_call, skipping");
-                pos = start + 10;
-                continue;
-            }
-            
-            // Extract content after > until newline or whitespace
-            tag_end = bracket_end + 1;
-            size_t name_end = tag_end;
-            while (name_end < response.size() && 
-                   response[name_end] != '\n' && 
-                   response[name_end] != '\r' &&
-                   response[name_end] != ' ' &&
-                   response[name_end] != '\t' &&
-                   response[name_end] != '{') {
-                name_end++;
-            }
-            
-            if (name_end == tag_end) {
-                LOG_DEBUG("[Agent] No tool name found after <tool_call>, skipping");
-                pos = start + 10;
-                continue;
-            }
-            
-            tool_name = response.substr(tag_end, name_end - tag_end);
-            tool_name = trim_whitespace(tool_name);
-            LOG_DEBUG("[Agent] Extracted tool name from fallback format: '%s'", tool_name.c_str());
-            
-            // Skip any whitespace/newlines before JSON content
-            while (tag_end < response.size() && 
-                   (response[tag_end] != '{' && response[tag_end] != '<')) {
-                tag_end++;
-            }
+        // Quick check: does the area after this brace contain "tool"?
+        // Look ahead a reasonable distance to avoid parsing random JSON
+        size_t lookahead_end = std::min(brace_start + 200, response.size());
+        std::string lookahead = response.substr(brace_start, lookahead_end - brace_start);
+        if (lookahead.find("\"tool\"") == std::string::npos) {
+            pos = brace_start + 1;
+            continue;
         }
         
-        LOG_DEBUG("[Agent] Opening tag ends at position %zu", tag_end);
-        
-        // Find </tool_call>
-        size_t close_tag = response.find("</tool_call>", tag_end);
-        std::string content;
-        if (close_tag == std::string::npos) {
-            // Fallback: try to recover a JSON object even if closing tag is missing
-            LOG_DEBUG("[Agent] No closing </tool_call> found, attempting recovery");
-            size_t json_start = response.find('{', tag_end);
-            if (json_start != std::string::npos) {
-                int brace_count = 1;
-                size_t json_end = json_start + 1;
-                while (json_end < response.size() && brace_count > 0) {
-                    if (response[json_end] == '{') brace_count++;
-                    else if (response[json_end] == '}') brace_count--;
-                    json_end++;
-                }
-                if (brace_count == 0) {
-                    close_tag = json_end;  // pretend content ends at JSON end
-                    content = response.substr(json_start, json_end - json_start);
-                    LOG_DEBUG("[Agent] Recovered tool_call content without closing tag");
-                }
-            }
-
-            if (close_tag == std::string::npos) {
-                LOG_DEBUG("[Agent] Recovery failed for missing </tool_call>, skipping");
-                pos = tag_end;
+        // Find the matching closing brace
+        int brace_count = 1;
+        size_t scan = brace_start + 1;
+        bool in_string = false;
+        bool escape_next = false;
+        while (scan < response.size() && brace_count > 0) {
+            char c = response[scan];
+            if (escape_next) {
+                escape_next = false;
+                scan++;
                 continue;
             }
-        } else {
-            LOG_DEBUG("[Agent] Found </tool_call> at position %zu", close_tag);
-            // Extract the content between tags
-            content = response.substr(tag_end, close_tag - tag_end);
+            if (c == '\\' && in_string) {
+                escape_next = true;
+                scan++;
+                continue;
+            }
+            if (c == '"') {
+                in_string = !in_string;
+            } else if (!in_string) {
+                if (c == '{') brace_count++;
+                else if (c == '}') brace_count--;
+            }
+            scan++;
         }
         
-        LOG_DEBUG("[Agent] Raw content between tags for '%s' (length=%zu): '%s'", 
-                  tool_name.c_str(), content.size(), content.c_str());
-        
-        content = trim_whitespace(content);
-        
-        // Clean up </arg_value> junk that some models emit
-        size_t arg_junk;
-        while ((arg_junk = content.find("</arg_value>")) != std::string::npos) {
-            content.erase(arg_junk, 12);
-        }
-        while ((arg_junk = content.find("<arg_value>")) != std::string::npos) {
-            content.erase(arg_junk, 11);
-        }
-        content = trim_whitespace(content);
-        
-        // If we recovered JSON from the name attribute, use that instead of tag content
-        if (!name_embedded_json.empty()) {
-            LOG_INFO("[Agent] Using JSON recovered from name attribute for '%s'", tool_name.c_str());
-            content = name_embedded_json;
+        if (brace_count != 0) {
+            // Unmatched braces, skip
+            pos = brace_start + 1;
+            continue;
         }
         
-        LOG_DEBUG("[Agent] Final content for '%s' (length=%zu): '%s'", 
-                  tool_name.c_str(), content.size(), content.c_str());
+        std::string candidate = response.substr(brace_start, scan - brace_start);
+        LOG_DEBUG("[Agent] Found candidate JSON at position %zu (length=%zu)", brace_start, candidate.size());
+        
+        // Try to parse the JSON
+        JsonParseResult parsed = try_parse_json(candidate);
+        if (!parsed.ok) {
+            LOG_DEBUG("[Agent] Candidate JSON parse failed: %s", parsed.error.c_str());
+            pos = brace_start + 1;
+            continue;
+        }
+        
+        // Check if this JSON has a "tool" key
+        if (!parsed.value.is_object() || !parsed.value.contains("tool")) {
+            pos = scan;
+            continue;
+        }
+        
+        std::string tool_name = parsed.value.value("tool", std::string(""));
+        if (tool_name.empty()) {
+            LOG_DEBUG("[Agent] JSON has 'tool' key but empty value, skipping");
+            pos = scan;
+            continue;
+        }
+        
+        LOG_DEBUG("[Agent] Found JSON tool call: '%s'", tool_name.c_str());
         
         ParsedToolCall call;
         call.tool_name = tool_name;
-        call.start_pos = start;
-        if (response.compare(close_tag, 12, "</tool_call>") == 0) {
-            call.end_pos = close_tag + 12;  // Length of </tool_call>
-        } else {
-            call.end_pos = close_tag;
-        }
-        call.raw_content = content;
+        call.start_pos = brace_start;
+        call.end_pos = scan;
+        call.raw_content = candidate;
         
-        // Detect XML tags inside tool_call (common mistake - should be JSON)
-        if (!content.empty() && content != "{}" && content.find('<') != std::string::npos) {
-            // Check if this looks like XML parameters instead of JSON
-            size_t bracket_pos = content.find('<');
-            size_t brace_pos = content.find('{');
-            
-            // If < comes before { or there's no {, this is likely XML format
-            if (brace_pos == std::string::npos || bracket_pos < brace_pos) {
-                call.valid = false;
-                call.parse_error = "INVALID FORMAT: Tool parameters must be JSON, not XML. "
-                                  "Use {\"param\": \"value\"} format, NOT <param>value</param>. "
-                                  "Example: <tool_call name=\"write\">\n{\"path\": \"file.txt\", \"content\": \"data\"}\n</tool_call>";
-                calls.push_back(call);
-                pos = call.end_pos;
-                LOG_WARN("[Agent] Detected XML tags in tool_call '%s' - rejecting", tool_name.c_str());
-                continue;
-            }
-        }
-        
-        // Parse JSON parameters
-        if (content.empty() || content == "{}") {
-            call.params = Json::object();
+        // Extract arguments
+        if (parsed.value.contains("arguments") && parsed.value["arguments"].is_object()) {
+            call.params = parsed.value["arguments"];
             call.valid = true;
-            LOG_DEBUG("[Agent] Parsed empty JSON params for '%s'", tool_name.c_str());
-        } else {
-            LOG_DEBUG("[Agent] Parsing JSON for '%s': %s", tool_name.c_str(), content.c_str());
-            JsonParseResult parsed = try_parse_json(content);
-            if (parsed.ok) {
-                call.params = parsed.value;
+            LOG_DEBUG("[Agent] Parsed arguments for '%s': %s", 
+                      tool_name.c_str(), call.params.dump().c_str());
+        } else if (parsed.value.contains("arguments") && parsed.value["arguments"].is_string()) {
+            // Sometimes models put a JSON string in arguments - try to parse it
+            std::string args_str = parsed.value["arguments"].get<std::string>();
+            JsonParseResult args_parsed = try_parse_json(args_str);
+            if (args_parsed.ok && args_parsed.value.is_object()) {
+                call.params = args_parsed.value;
                 call.valid = true;
-                if (parsed.used != content) {
-                    LOG_DEBUG("[Agent] Recovered JSON for '%s' using extracted object: %s", 
-                              tool_name.c_str(), parsed.used.c_str());
-                }
-                LOG_DEBUG("[Agent] Successfully parsed JSON for '%s'", tool_name.c_str());
+                LOG_DEBUG("[Agent] Parsed stringified arguments for '%s'", tool_name.c_str());
             } else {
                 call.valid = false;
-                call.parse_error = std::string("JSON parse error: ") + parsed.error;
-                LOG_WARN("[Agent] Failed to parse tool call params for '%s': %s", 
-                         tool_name.c_str(), parsed.error.c_str());
-                LOG_DEBUG("[Agent] Failed JSON content was: %s", content.c_str());
+                call.parse_error = "Arguments field is a string but not valid JSON: " + args_str;
+                LOG_WARN("[Agent] Failed to parse stringified arguments for '%s'", tool_name.c_str());
             }
+        } else {
+            // No arguments field - that's OK for tools with no params
+            call.params = Json::object();
+            call.valid = true;
+            LOG_DEBUG("[Agent] No arguments for '%s', using empty params", tool_name.c_str());
         }
         
         calls.push_back(call);
-        pos = call.end_pos;
+        pos = scan;
         
         LOG_DEBUG("[Agent] Parsed tool call: %s (valid=%s)", 
                   tool_name.c_str(), call.valid ? "yes" : "no");
-    }
-    
-    // If no standard tool calls found, try alternative format: <|channel|>commentary to=toolname
-    if (calls.empty()) {
-        LOG_DEBUG("[Agent] No standard tool calls found, trying alternative format...");
-        pos = 0;
-        while (pos < response.size()) {
-            // Find "to=" which indicates a tool call in alternative format
-            size_t to_pos = response.find(" to=", pos);
-            if (to_pos == std::string::npos) break;
-            
-            // Extract tool name after "to="
-            size_t tool_start = to_pos + 4;
-            size_t tool_end = tool_start;
-            while (tool_end < response.size() && 
-                   response[tool_end] != ' ' && response[tool_end] != '<' && 
-                   response[tool_end] != '\n' && response[tool_end] != '\r') {
-                tool_end++;
-            }
-            
-            std::string tool_name = response.substr(tool_start, tool_end - tool_start);
-            
-            // Look for JSON params after this - find next '{'
-            size_t json_start = response.find('{', tool_end);
-            if (json_start == std::string::npos || json_start > tool_end + 100) {
-                pos = tool_end;
-                continue;
-            }
-            
-            // Find matching '}'
-            int brace_count = 1;
-            size_t json_end = json_start + 1;
-            while (json_end < response.size() && brace_count > 0) {
-                if (response[json_end] == '{') brace_count++;
-                else if (response[json_end] == '}') brace_count--;
-                json_end++;
-            }
-            
-            if (brace_count == 0) {
-                std::string json_str = response.substr(json_start, json_end - json_start);
-                
-                ParsedToolCall call;
-                call.tool_name = tool_name;
-                call.start_pos = to_pos;
-                call.end_pos = json_end;
-                call.raw_content = json_str;
-                
-                LOG_DEBUG("[Agent] Parsing alternative format JSON for '%s': %s", tool_name.c_str(), json_str.c_str());
-                JsonParseResult parsed = try_parse_json(json_str);
-                if (parsed.ok) {
-                    call.params = parsed.value;
-                    call.valid = true;
-                    calls.push_back(call);
-                    if (parsed.used != json_str) {
-                        LOG_DEBUG("[Agent] Recovered alternative format JSON for '%s' using extracted object: %s",
-                                  tool_name.c_str(), parsed.used.c_str());
-                    }
-                    LOG_INFO("[Agent] Parsed alternative format tool call: %s", tool_name.c_str());
-                } else {
-                    LOG_WARN("[Agent] Failed to parse alternative format JSON: %s", parsed.error.c_str());
-                    LOG_DEBUG("[Agent] Failed alternative format JSON was: %s", json_str.c_str());
-                }
-            }
-            
-            pos = json_end;
-        }
     }
     
     return calls;
@@ -885,7 +652,7 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
             hint += t->first;
             first = false;
         }
-        hint += "\nExample: <tool_call name=\"bash\">{\"command\":\"ls\"}</tool_call>";
+        hint += "\nExample: {\"tool\": \"bash\", \"arguments\": {\"command\": \"ls\"}}";
         return AgentToolResult::fail(hint);
     }
     
@@ -946,8 +713,8 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
 
 std::string Agent::format_tool_result(const std::string& tool_name, const AgentToolResult& result) {
     std::ostringstream oss;
-    oss << "<tool_result name=\"" << tool_name << "\" success=\"" 
-        << (result.success ? "true" : "false") << "\">\n";
+    oss << "[TOOL_RESULT tool=" << tool_name 
+        << " success=" << (result.success ? "true" : "false") << "]\n";
     
     if (result.success) {
         // Check if the result is too large and should be chunked
@@ -982,7 +749,7 @@ std::string Agent::format_tool_result(const std::string& tool_name, const AgentT
         oss << "Error: " << result.error;
     }
     
-    oss << "\n</tool_result>";
+    oss << "\n[/TOOL_RESULT]";
     return oss.str();
 }
 
@@ -1046,19 +813,19 @@ bool Agent::try_truncate_history(std::vector<ConversationMessage>& history) cons
     bool truncated_something = false;
     for (size_t i = 0; i < history.size(); ++i) {
         ConversationMessage& msg = history[i];
-        if (msg.role == MessageRole::USER && msg.content.find("<tool_result") != std::string::npos) {
+        if (msg.role == MessageRole::USER && msg.content.find("[TOOL_RESULT") != std::string::npos) {
             // This is a tool result message - check if it's large
             if (msg.content.size() > 10000) {
                 // Truncate to a summary
-                size_t result_start = msg.content.find("<tool_result");
-                size_t result_end = msg.content.find("</tool_result>");
+                size_t result_start = msg.content.find("[TOOL_RESULT");
+                size_t result_end = msg.content.find("[/TOOL_RESULT]");
                 if (result_end != std::string::npos) {
                     // Extract tool name
                     std::string tool_name = "unknown";
-                    size_t name_start = msg.content.find("name=\"", result_start);
+                    size_t name_start = msg.content.find("tool=", result_start);
                     if (name_start != std::string::npos) {
-                        name_start += 6;
-                        size_t name_end = msg.content.find("\"", name_start);
+                        name_start += 5;
+                        size_t name_end = msg.content.find_first_of(" ]", name_start);
                         if (name_end != std::string::npos) {
                             tool_name = msg.content.substr(name_start, name_end - name_start);
                         }
@@ -1066,12 +833,17 @@ bool Agent::try_truncate_history(std::vector<ConversationMessage>& history) cons
                     
                     // Create truncated version
                     std::ostringstream truncated;
-                    truncated << "<tool_result name=\"" << tool_name << "\" success=\"true\">\n";
+                    truncated << "[TOOL_RESULT tool=" << tool_name << " success=true]\n";
                     truncated << "[Content truncated to fit context window - original was " 
                               << msg.content.size() << " characters]\n";
                     
                     // Keep first 2000 chars of content
-                    size_t content_start = msg.content.find(">", result_start) + 1;
+                    size_t content_start = msg.content.find("]\n", result_start);
+                    if (content_start != std::string::npos) {
+                        content_start += 2;
+                    } else {
+                        content_start = result_start;
+                    }
                     size_t content_len = result_end - content_start;
                     if (content_len > 2000) {
                         truncated << msg.content.substr(content_start, 2000);
@@ -1079,7 +851,7 @@ bool Agent::try_truncate_history(std::vector<ConversationMessage>& history) cons
                     } else {
                         truncated << msg.content.substr(content_start, content_len);
                     }
-                    truncated << "\n</tool_result>";
+                    truncated << "\n[/TOOL_RESULT]";
                     
                     LOG_DEBUG("[Agent] Truncated tool result for '%s' from %zu to %zu chars",
                               tool_name.c_str(), msg.content.size(), truncated.str().size());
@@ -1366,7 +1138,7 @@ AgentResult Agent::run(
                 std::string continuation_prompt = 
                     "You said you would take action but didn't use a tool. "
                     "Stop planning and ACT NOW. Emit the tool call immediately:\n\n"
-                    "<tool_call name=\"TOOLNAME\">\n{\"param\": \"value\"}\n</tool_call>\n\n"
+                    "{\"tool\": \"TOOLNAME\", \"arguments\": {\"param\": \"value\"}}\n\n"
                     "Do NOT explain. Do NOT plan. Just emit the tool call.";
                 
                 history.push_back(ConversationMessage::user(continuation_prompt));
@@ -1405,10 +1177,10 @@ AgentResult Agent::run(
             if (seen_in_response.count(dedup_key)) {
                 LOG_WARN("[Agent] Skipping duplicate tool call in same response: %s",
                          call.tool_name.c_str());
-                results_oss << "<tool_result name=\"" << call.tool_name 
-                            << "\" success=\"true\">\n"
+                results_oss << "[TOOL_RESULT tool=" << call.tool_name 
+                            << " success=true]\n"
                             << "(Duplicate call skipped - same tool with same parameters "
-                            << "was already called in this response)\n</tool_result>\n";
+                            << "was already called in this response)\n[/TOOL_RESULT]\n";
                 continue;
             }
             seen_in_response.insert(dedup_key);
@@ -1423,11 +1195,11 @@ AgentResult Agent::run(
                 if (prev_iter == result.iterations - 1) {
                     LOG_WARN("[Agent] Skipping repeated tool call from consecutive iteration: %s",
                              call.tool_name.c_str());
-                    results_oss << "<tool_result name=\"" << call.tool_name 
-                                << "\" success=\"true\">\n"
+                    results_oss << "[TOOL_RESULT tool=" << call.tool_name 
+                                << " success=true]\n"
                                 << "(This exact tool call was already made in the previous iteration. "
                                 << "The result has not changed. Please use the previous result "
-                                << "or try a different approach.)\n</tool_result>\n";
+                                << "or try a different approach.)\n[/TOOL_RESULT]\n";
                     continue;
                 }
             }

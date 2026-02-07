@@ -52,25 +52,25 @@ The AI doesn't just answer questions — it **acts**. OpenCrank implements a ful
 - `libcurl-dev`, `libsqlite3-dev`, `libssl-dev`
 
 **Fedora/RHEL:**
-```bash
+```shell
 sudo dnf install gcc-c++ libcurl-devel sqlite-devel openssl-devel
 ```
 
 **Ubuntu/Debian:**
-```bash
+```shell
 sudo apt-get install build-essential libcurl4-openssl-dev libsqlite3-dev libssl-dev
 ```
 
 ### Build & Run
 
-```bash
+```shell
 git clone https://github.com/user/opencrank-cpp.git
 cd opencrank-cpp
 
 make                # Build binary + all plugins
 ```
 
-```bash
+```shell
 cp config.example.json config.json
 # Edit config.json — add your API keys and bot tokens
 
@@ -122,7 +122,7 @@ bin/
     │ telegram.so  │    │ claude.so   │   │ Browser     │
     │ whatsapp.so  │    │ llamacpp.so │   │ Memory      │
     │ gateway.so   │    │             │   │ File I/O    │
-    │              │    │             │   │ Bash        │
+    │              │    │             │   │ Shell        │
     └──────────────┘    └─────────────┘   └─────────────┘
                                 │
                         ┌───────┴────────┐
@@ -194,13 +194,13 @@ User Message
 The AI uses a JSON format to invoke tools:
 
 ```json
-{"tool": "bash", "arguments": {"command": "ls -la /workspace"}}
+{"tool": "shell", "arguments": {"command": "ls -la /workspace"}}
 ```
 
 Results are injected back as plain text:
 
 ```
-[TOOL_RESULT tool=bash success=true]
+[TOOL_RESULT tool=shell success=true]
   total 42
   drwxr-xr-x  5 user user  4096 Jan 15 10:30 .
   -rw-r--r--  1 user user  1234 Jan 15 10:28 config.json
@@ -214,7 +214,7 @@ Results are injected back as plain text:
 |---|---|
 | `read` | Read file contents (with line ranges) |
 | `write` | Write/create files |
-| `bash` | Execute shell commands (with timeout) |
+| `shell` | Execute shell commands (with timeout) |
 | `list_dir` | List directory contents |
 | `browser_fetch` | Fetch web page content |
 | `browser_links` | Extract links from a URL |
@@ -282,7 +282,7 @@ metadata: { "opencrank": { "emoji": "🌤️", "requires": { "bins": ["curl"] } 
 
 Free, no key, good for programmatic use:
 
-\`\`\`bash
+\`\`\`shell
 curl -s "https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.12&current_weather=true"
 \`\`\`
 
@@ -390,7 +390,7 @@ OPENCRANK_DECLARE_PLUGIN(MyChannel, "mychannel", "1.0.0", "My custom channel", "
 
 Build as a shared library:
 
-```bash
+```shell
 g++ -std=c++11 -fPIC -shared -I./include mychannel.cpp -o mychannel.so
 ```
 
@@ -496,7 +496,7 @@ OpenCrank supports local AI inference via the `llamacpp` plugin, which connects 
 
 Install dependencies and build the latest Llama.cpp with GPU support:
 
-```bash
+```shell
 # Install build dependencies
 sudo apt-get update
 sudo apt-get install pciutils build-essential cmake curl libcurl4-openssl-dev -y
@@ -519,7 +519,7 @@ cp llama.cpp/build/bin/llama-* llama.cpp/
 
 Install the Hugging Face CLI and download the 4-bit quantized model:
 
-```bash
+```shell
 pip install -U huggingface_hub
 
 # Download the recommended 4-bit model (~18GB)
@@ -534,7 +534,7 @@ huggingface-cli download unsloth/GLM-4.7-Flash-GGUF \
 
 Launch the Llama.cpp server with OpenAI-compatible API:
 
-```bash
+```shell
 ./llama.cpp/llama-server \
     --model models/GLM-4.7-Flash-GGUF/GLM-4.7-Flash-UD-Q4_K_XL.gguf \
     --alias "GLM-4.7-Flash" \
@@ -583,7 +583,7 @@ Update your `config.json` to use the llamacpp plugin:
 
 #### 5. Run OpenCrank
 
-```bash
+```shell
 make                     # Build if not already done
 ./bin/opencrank --config config.json
 ```
@@ -658,7 +658,7 @@ opencrank-cpp/
 │   ├── core/
 │   │   ├── application.hpp        # Application singleton (lifecycle, system prompt)
 │   │   ├── agent.hpp              # Agentic loop, AgentTool, ContentChunker
-│   │   ├── builtin_tools.hpp      # File I/O, bash, content tools
+│   │   ├── builtin_tools.hpp      # File I/O, shell, content tools
 │   │   ├── browser_tool.hpp       # Web fetching and link extraction
 │   │   ├── memory_tool.hpp        # Memory/task agent tools
 │   │   ├── message_handler.hpp    # Message routing and dispatch

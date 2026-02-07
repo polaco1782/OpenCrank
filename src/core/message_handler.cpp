@@ -245,7 +245,7 @@ std::string handle_ai_message(
     
     auto* ai = app.registry().get_default_ai();
     if (!ai || !ai->is_configured()) {
-        return "No AI provider configured. Set in config.json to enable AI features. ";
+        return "No AI provider configured. Set in config.json to enable AI features. "
                "Type /help for available commands.";
     }
     

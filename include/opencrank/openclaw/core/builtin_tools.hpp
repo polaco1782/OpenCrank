@@ -4,7 +4,7 @@
  * Provides filesystem and shell tools for the agent:
  * - read: Read file contents
  * - write: Write content to files
- * - bash: Execute shell commands
+ * - shell: Execute shell commands
  * - list_dir: List directory contents
  * - content_chunk: Retrieve chunks of large content
  * - content_search: Search within large content
@@ -61,13 +61,13 @@ public:
     
 private:
     std::string workspace_dir_;
-    int bash_timeout_;
+    int shell_timeout_;
     ContentChunker* chunker_;
     
     // Internal tool implementations
     AgentToolResult do_read(const Json& params) const;
     AgentToolResult do_write(const Json& params) const;
-    AgentToolResult do_bash(const Json& params) const;
+    AgentToolResult do_shell(const Json& params) const;
     AgentToolResult do_list_dir(const Json& params) const;
     AgentToolResult do_content_chunk(const Json& params) const;
     AgentToolResult do_content_search(const Json& params) const;
@@ -96,13 +96,13 @@ AgentTool create_read_tool(const std::string& workspace_dir);
 AgentTool create_write_tool(const std::string& workspace_dir);
 
 /**
- * Create a bash/shell execution tool.
+ * Create a shell/shell execution tool.
  * 
  * @param workspace_dir Working directory for commands
  * @param timeout_secs Command timeout (default: 20 seconds)
  * @return Configured AgentTool
  */
-AgentTool create_bash_tool(const std::string& workspace_dir, int timeout_secs = 20);
+AgentTool create_shell_tool(const std::string& workspace_dir, int timeout_secs = 20);
 
 /**
  * Create a directory listing tool.

@@ -652,7 +652,7 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
             hint += t->first;
             first = false;
         }
-        hint += "\nExample: {\"tool\": \"bash\", \"arguments\": {\"command\": \"ls\"}}";
+        hint += "\nExample: {\"tool\": \"shell\", \"arguments\": {\"command\": \"ls\"}}";
         return AgentToolResult::fail(hint);
     }
     

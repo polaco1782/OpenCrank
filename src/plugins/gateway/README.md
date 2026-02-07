@@ -85,7 +85,7 @@ Add to your `config.json`:
 
 ### Prerequisites
 
-```bash
+```shell
 # Install libwebsockets development package
 # On Fedora/RHEL:
 sudo dnf install libwebsockets-devel
@@ -96,7 +96,7 @@ sudo apt-get install libwebsockets-dev
 
 ### Build Commands
 
-```bash
+```shell
 cd src/plugins/gateway
 make
 make install
@@ -110,7 +110,7 @@ This will create `bin/plugins/gateway.so`.
 
 The gateway automatically starts when the plugin is loaded and initialized:
 
-```bash
+```shell
 ./bin/opencrank config.json
 ```
 
@@ -126,7 +126,7 @@ If the gateway plugin is configured, you'll see:
 
 Using `wscat`:
 
-```bash
+```shell
 npm install -g wscat
 wscat -c ws://localhost:18789
 ```

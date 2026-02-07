@@ -350,7 +350,7 @@ std::string SkillManager::build_skill_instructions(bool /* include_skills_xml */
     oss << "- ALWAYS read the SKILL.md file BEFORE attempting to execute the skill\n";
     oss << "- The SKILL.md contains the EXACT commands and tool parameters you must use\n";
     oss << "- Skills define HOW to accomplish tasks - follow them precisely\n";
-    oss << "- Use the `bash` tool to execute commands shown in the SKILL.md\n";
+    oss << "- Use the `shell` tool to execute commands shown in the SKILL.md\n";
     oss << "- If multiple skills could apply, choose the most specific one\n";
     oss << "- If no skill clearly applies, respond without using a skill\n\n";
     
@@ -358,7 +358,7 @@ std::string SkillManager::build_skill_instructions(bool /* include_skills_xml */
     oss << "User: \"Run this Python code: print('hello')\"\n";
     oss << "1. Scan available_skills -> find skill with python in description\n";
     oss << "2. Read the SKILL.md file using: {\"tool\": \"read\", \"arguments\": {\"path\": \"path/to/SKILL.md\"}}\n";
-    oss << "3. Follow the instructions in SKILL.md (e.g., use bash tool with python3 command)\n";
+    oss << "3. Follow the instructions in SKILL.md (e.g., use shell tool with python3 command)\n";
     oss << "4. Return the result to the user\n\n";
     
     LOG_DEBUG("[SkillManager] Built skill instructions (%zu bytes)", oss.str().size());

@@ -174,12 +174,12 @@ AgentTool create_write_tool(const std::string& workspace_dir) {
 }
 
 // ============================================================================
-// Bash Tool
+// Shell Tool
 // ============================================================================
 
-AgentTool create_bash_tool(const std::string& workspace_dir, int timeout_secs) {
+AgentTool create_shell_tool(const std::string& workspace_dir, int timeout_secs) {
     AgentTool tool;
-    tool.name = "bash";
+    tool.name = "shell";
     tool.description = "Execute a shell command and return its output. "
                        "Use this for running scripts, checking system state, or executing programs.";
     
@@ -219,10 +219,10 @@ AgentTool create_bash_tool(const std::string& workspace_dir, int timeout_secs) {
             command = command.substr(0, curl_pos + 5) + 
                       "--connect-timeout 10 --max-time 15 " + 
                       command.substr(curl_pos + 5);
-            LOG_DEBUG("[bash tool] Auto-added timeout to curl: %s", command.c_str());
+            LOG_DEBUG("[shell tool] Auto-added timeout to curl: %s", command.c_str());
         }
         
-        LOG_INFO("[bash tool] Executing: %s (in %s)", command.c_str(), workdir.c_str());
+        LOG_INFO("[shell tool] Executing: %s (in %s)", command.c_str(), workdir.c_str());
         
         // Security: Block dangerous patterns
         std::string lower_cmd = command;
@@ -501,7 +501,7 @@ AgentTool create_content_search_tool(ContentChunker& chunker) {
 
 BuiltinToolsProvider::BuiltinToolsProvider()
     : workspace_dir_(".")
-    , bash_timeout_(20)
+    , shell_timeout_(20)
     , chunker_(nullptr) {}
 
 BuiltinToolsProvider::~BuiltinToolsProvider() {
@@ -510,10 +510,10 @@ BuiltinToolsProvider::~BuiltinToolsProvider() {
 
 bool BuiltinToolsProvider::init(const Config& cfg) {
     workspace_dir_ = cfg.get_string("workspace_dir", ".");
-    bash_timeout_ = static_cast<int>(cfg.get_int("agent.bash_timeout", 20));
+    shell_timeout_ = static_cast<int>(cfg.get_int("agent.shell_timeout", 20));
     
-    LOG_INFO("Builtin tools initialized (workspace=%s, bash_timeout=%ds)",
-             workspace_dir_.c_str(), bash_timeout_);
+    LOG_INFO("Builtin tools initialized (workspace=%s, shell_timeout=%ds)",
+             workspace_dir_.c_str(), shell_timeout_);
     
     initialized_ = true;
     return true;
@@ -527,7 +527,7 @@ std::vector<std::string> BuiltinToolsProvider::actions() const {
     std::vector<std::string> acts;
     acts.push_back("read");
     acts.push_back("write");
-    acts.push_back("bash");
+    acts.push_back("shell");
     acts.push_back("list_dir");
     acts.push_back("content_chunk");
     acts.push_back("content_search");
@@ -541,8 +541,8 @@ ToolResult BuiltinToolsProvider::execute(const std::string& action, const Json& 
         result = do_read(params);
     } else if (action == "write") {
         result = do_write(params);
-    } else if (action == "bash") {
-        result = do_bash(params);
+    } else if (action == "shell") {
+        result = do_shell(params);
     } else if (action == "list_dir") {
         result = do_list_dir(params);
     } else if (action == "content_chunk") {
@@ -608,10 +608,10 @@ std::vector<AgentTool> BuiltinToolsProvider::get_agent_tools() const {
         tools.push_back(tool);
     }
     
-    // bash - Execute shell commands
+    // shell - Execute shell commands
     {
         AgentTool tool;
-        tool.name = "bash";
+        tool.name = "shell";
         tool.description = "Execute a shell command and return its output. "
                            "Use this for running scripts, checking system state, or executing programs.";
         tool.params.push_back(ToolParamSchema(
@@ -626,7 +626,7 @@ std::vector<AgentTool> BuiltinToolsProvider::get_agent_tools() const {
         ));
         
         tool.execute = [self](const Json& params) -> AgentToolResult {
-            return self->do_bash(params);
+            return self->do_shell(params);
         };
         
         tools.push_back(tool);
@@ -776,7 +776,7 @@ AgentToolResult BuiltinToolsProvider::do_write(const Json& params) const {
     );
 }
 
-AgentToolResult BuiltinToolsProvider::do_bash(const Json& params) const {
+AgentToolResult BuiltinToolsProvider::do_shell(const Json& params) const {
     if (!params.contains("command") || !params["command"].is_string()) {
         return AgentToolResult::fail("Missing required parameter: command");
     }
@@ -798,10 +798,10 @@ AgentToolResult BuiltinToolsProvider::do_bash(const Json& params) const {
         command = command.substr(0, curl_pos + 5) + 
                   "--connect-timeout 10 --max-time 15 " + 
                   command.substr(curl_pos + 5);
-        LOG_DEBUG("[bash tool] Auto-added timeout to curl: %s", command.c_str());
+        LOG_DEBUG("[shell tool] Auto-added timeout to curl: %s", command.c_str());
     }
     
-    LOG_INFO("[bash tool] Executing: %s (in %s)", command.c_str(), workdir.c_str());
+    LOG_INFO("[shell tool] Executing: %s (in %s)", command.c_str(), workdir.c_str());
     
     // Security: Block dangerous patterns
     std::string lower_cmd = command;
@@ -820,8 +820,8 @@ AgentToolResult BuiltinToolsProvider::do_bash(const Json& params) const {
     full_cmd << "cd \"" << workdir << "\" && ";
     
 #ifndef _WIN32
-    if (bash_timeout_ > 0) {
-        full_cmd << "timeout " << bash_timeout_ << " ";
+    if (shell_timeout_ > 0) {
+        full_cmd << "timeout " << shell_timeout_ << " ";
     }
 #endif
     
@@ -860,7 +860,7 @@ AgentToolResult BuiltinToolsProvider::do_bash(const Json& params) const {
         std::ostringstream err;
         if (exit_code == 124) {
             // Timeout
-            err << "Command timed out after " << bash_timeout_ << " seconds.";
+            err << "Command timed out after " << shell_timeout_ << " seconds.";
             if (!result.empty()) {
                 err << " Partial output:\n" << result;
             }

@@ -1,4 +1,5 @@
 #include <opencrank/core/session.hpp>
+#include <opencrank/core/logger.hpp>
 #include <opencrank/core/utils.hpp>
 #include <ctime>
 #include <sstream>
@@ -196,6 +197,7 @@ Session& SessionManager::get_session(const std::string& key) {
     if (it == sessions_.end()) {
         Session new_session(key);
         sessions_[key] = new_session;
+        LOG_DEBUG("[Session] Created new session: %s (total: %zu)", key.c_str(), sessions_.size());
         return sessions_[key];
     }
     it->second.touch();
@@ -239,6 +241,10 @@ Session& SessionManager::get_session_for_message(const Message& msg, const std::
     // Apply history limit
     session.limit_history(max_history_);
     
+    LOG_DEBUG("[Session] Resolved session for %s/%s: key=%s, history=%zu", 
+              msg.channel.c_str(), msg.from.c_str(), 
+              session_key.c_str(), session.history().size());
+    
     return session;
 }
 
@@ -260,6 +266,11 @@ size_t SessionManager::cleanup_inactive(int64_t max_age_seconds) {
         } else {
             ++it;
         }
+    }
+    
+    if (removed > 0) {
+        LOG_DEBUG("[Session] Cleaned up %zu inactive sessions (remaining: %zu)", 
+                  removed, sessions_.size());
     }
     
     return removed;

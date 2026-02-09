@@ -3,7 +3,7 @@
 
 CXX = g++
 CXXFLAGS = -std=c++11 -Wall -Wextra -g -O0 -I./include
-CXXFLAGS_PIC = $(CXXFLAGS) -fPIC -fvisibility=hidden
+CXXFLAGS_PIC = $(CXXFLAGS) -fPIC
 LDFLAGS = -lpthread -lsqlite3 -lssl -lcrypto -lcurl -ldl
 
 # Directories
@@ -36,6 +36,9 @@ CORE_SOURCES = $(SRC_DIR)/core/types.cpp \
                $(SRC_DIR)/core/application.cpp \
                $(SRC_DIR)/core/message_handler.cpp \
                $(SRC_DIR)/core/builtin_tools.cpp \
+               $(SRC_DIR)/core/builtin_tools_legacy.cpp \
+               $(SRC_DIR)/core/content_chunker.cpp \
+               $(SRC_DIR)/core/context_manager.cpp \
                $(SRC_DIR)/core/ai_monitor.cpp \
                $(SRC_DIR)/ai/ai.cpp \
                $(SRC_DIR)/memory/store.cpp \
@@ -62,6 +65,9 @@ CORE_OBJECTS = $(BUILD_DIR)/types.o \
                $(BUILD_DIR)/application.o \
                $(BUILD_DIR)/message_handler.o \
                $(BUILD_DIR)/builtin_tools.o \
+               $(BUILD_DIR)/builtin_tools_legacy.o \
+               $(BUILD_DIR)/content_chunker.o \
+               $(BUILD_DIR)/context_manager.o \
                $(BUILD_DIR)/ai_monitor.o \
                $(BUILD_DIR)/ai.o \
                $(BUILD_DIR)/memory_store.o \
@@ -146,6 +152,15 @@ $(BUILD_DIR)/ai_monitor.o: $(SRC_DIR)/core/ai_monitor.cpp
 	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
 
 $(BUILD_DIR)/builtin_tools.o: $(SRC_DIR)/core/builtin_tools.cpp
+	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
+
+$(BUILD_DIR)/builtin_tools_legacy.o: $(SRC_DIR)/core/builtin_tools_legacy.cpp
+	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
+
+$(BUILD_DIR)/content_chunker.o: $(SRC_DIR)/core/content_chunker.cpp
+	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
+
+$(BUILD_DIR)/context_manager.o: $(SRC_DIR)/core/context_manager.cpp
 	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
 
 $(BUILD_DIR)/memory_tool.o: $(SRC_DIR)/core/memory_tool.cpp

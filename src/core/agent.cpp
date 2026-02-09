@@ -5,6 +5,7 @@
  * Built-in tools are in builtin_tools.cpp.
  */
 #include <opencrank/core/agent.hpp>
+#include <opencrank/core/application.hpp>
 #include <opencrank/ai/ai.hpp>
 #include <opencrank/core/utils.hpp>
 #include <sstream>
@@ -17,143 +18,6 @@
 #include <fstream>
 
 namespace opencrank {
-
-// ============================================================================
-// ContentChunker Implementation
-// ============================================================================
-
-ContentChunker::ContentChunker() : next_id_(1) {}
-
-std::string ContentChunker::store(const std::string& content, const std::string& source, size_t chunk_size) {
-    ChunkedContent cc;
-    cc.id = "chunk_" + std::to_string(next_id_++);
-    cc.full_content = content;
-    cc.source = source;
-    cc.chunk_size = chunk_size;
-    cc.total_chunks = (content.size() + chunk_size - 1) / chunk_size;
-    
-    storage_[cc.id] = cc;
-    
-    LOG_DEBUG("[ContentChunker] Stored content '%s' from '%s': %zu bytes, %zu chunks",
-              cc.id.c_str(), source.c_str(), content.size(), cc.total_chunks);
-    
-    return cc.id;
-}
-
-std::string ContentChunker::get_chunk(const std::string& id, size_t chunk_index) const {
-    std::map<std::string, ChunkedContent>::const_iterator it = storage_.find(id);
-    if (it == storage_.end()) {
-        return "Error: Content ID '" + id + "' not found.";
-    }
-    
-    const ChunkedContent& cc = it->second;
-    if (chunk_index >= cc.total_chunks) {
-        return "Error: Chunk index " + std::to_string(chunk_index) + 
-               " out of range. Total chunks: " + std::to_string(cc.total_chunks);
-    }
-    
-    size_t start = chunk_index * cc.chunk_size;
-    size_t len = std::min(cc.chunk_size, cc.full_content.size() - start);
-    
-    std::ostringstream oss;
-    oss << "[Chunk " << (chunk_index + 1) << "/" << cc.total_chunks 
-        << " from " << cc.source << "]\n";
-    oss << cc.full_content.substr(start, len);
-    
-    if (chunk_index + 1 < cc.total_chunks) {
-        oss << "\n\n[Use content_chunk tool with id=\"" << id 
-            << "\" and chunk=" << (chunk_index + 1) << " for next chunk]";
-    } else {
-        oss << "\n\n[End of content]";
-    }
-    
-    return oss.str();
-}
-
-std::string ContentChunker::get_info(const std::string& id) const {
-    std::map<std::string, ChunkedContent>::const_iterator it = storage_.find(id);
-    if (it == storage_.end()) {
-        return "Content ID '" + id + "' not found.";
-    }
-    
-    const ChunkedContent& cc = it->second;
-    std::ostringstream oss;
-    oss << "Content ID: " << cc.id << "\n";
-    oss << "Source: " << cc.source << "\n";
-    oss << "Total size: " << cc.full_content.size() << " characters\n";
-    oss << "Total chunks: " << cc.total_chunks << " (each ~" << cc.chunk_size << " chars)\n";
-    
-    return oss.str();
-}
-
-std::string ContentChunker::search(const std::string& id, const std::string& query, size_t context_chars) const {
-    std::map<std::string, ChunkedContent>::const_iterator it = storage_.find(id);
-    if (it == storage_.end()) {
-        return "Content ID '" + id + "' not found.";
-    }
-    
-    const ChunkedContent& cc = it->second;
-    std::string content_lower = cc.full_content;
-    std::string query_lower = query;
-    
-    // Convert to lowercase for case-insensitive search
-    for (size_t i = 0; i < content_lower.size(); ++i) {
-        content_lower[i] = tolower(content_lower[i]);
-    }
-    for (size_t i = 0; i < query_lower.size(); ++i) {
-        query_lower[i] = tolower(query_lower[i]);
-    }
-    
-    std::vector<size_t> matches;
-    size_t pos = 0;
-    while ((pos = content_lower.find(query_lower, pos)) != std::string::npos) {
-        matches.push_back(pos);
-        pos += query_lower.size();
-        if (matches.size() >= 10) break; // Limit matches
-    }
-    
-    if (matches.empty()) {
-        return "No matches found for '" + query + "' in content.";
-    }
-    
-    std::ostringstream oss;
-    oss << "Found " << matches.size() << " match(es) for '" << query << "':\n\n";
-    
-    for (size_t i = 0; i < matches.size(); ++i) {
-        size_t match_pos = matches[i];
-        size_t start = (match_pos > context_chars) ? (match_pos - context_chars) : 0;
-        size_t end = std::min(match_pos + query.size() + context_chars, cc.full_content.size());
-        
-        oss << "--- Match " << (i + 1) << " (at position " << match_pos << ") ---\n";
-        if (start > 0) oss << "...";
-        oss << cc.full_content.substr(start, end - start);
-        if (end < cc.full_content.size()) oss << "...";
-        oss << "\n\n";
-    }
-    
-    return oss.str();
-}
-
-bool ContentChunker::has(const std::string& id) const {
-    return storage_.find(id) != storage_.end();
-}
-
-void ContentChunker::clear() {
-    storage_.clear();
-    LOG_DEBUG("[ContentChunker] Cleared all stored content");
-}
-
-void ContentChunker::remove(const std::string& id) {
-    storage_.erase(id);
-}
-
-size_t ContentChunker::get_total_chunks(const std::string& id) const {
-    std::map<std::string, ChunkedContent>::const_iterator it = storage_.find(id);
-    if (it == storage_.end()) {
-        return 0;
-    }
-    return it->second.total_chunks;
-}
 
 // ============================================================================
 // Helper Functions
@@ -696,12 +560,33 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
         }
     }
     
-    LOG_INFO("[Agent] Executing tool: %s", call.tool_name.c_str());
-    LOG_DEBUG("[Agent] Tool params: %s", effective_call.params.dump().c_str());
+    LOG_INFO("[Agent] ▶ TOOL Executing: %s", call.tool_name.c_str());
+    LOG_DEBUG("[Agent] ▶ TOOL Params: %s", effective_call.params.dump().c_str());
+    
+    // Send debug message to chat if debug logging is enabled
+    if (!channel_id_.empty() && !chat_id_.empty() && 
+        Logger::instance().level() == LogLevel::DEBUG) {
+        
+        auto& app = Application::instance();
+        auto* channel = app.registry().get_channel(channel_id_);
+        
+        if (channel) {
+            std::ostringstream debug_msg;
+            debug_msg << "🔧 **Tool Call [DEBUG]**\n";
+            debug_msg << "Tool: `" << call.tool_name << "`\n";
+            debug_msg << "Arguments:\n```json\n";
+            debug_msg << effective_call.params.dump(2);
+            debug_msg << "\n```";
+            
+            channel->send_message(chat_id_, debug_msg.str());
+            LOG_DEBUG("[Agent] Sent debug tool call message to %s:%s", 
+                      channel_id_.c_str(), chat_id_.c_str());
+        }
+    }
     
     try {
         AgentToolResult result = it->second.execute(effective_call.params);
-        LOG_DEBUG("[Agent] Tool %s result: success=%s, output_len=%zu",
+        LOG_DEBUG("[Agent] ◀ TOOL %s result: success=%s, output_len=%zu",
                   call.tool_name.c_str(), result.success ? "yes" : "no", 
                   result.output.size());
         return result;
@@ -719,8 +604,8 @@ std::string Agent::format_tool_result(const std::string& tool_name, const AgentT
     if (result.success) {
         // Check if the result is too large and should be chunked
         if (config_.auto_chunk_large_results && result.output.size() > config_.max_tool_result_size) {
-            // Store the large content in the chunker
-            std::string chunk_id = chunker_.store(result.output, tool_name);
+            // Store the large content in the chunker using config-driven chunk size
+            std::string chunk_id = chunker_.store(result.output, tool_name, config_.effective_chunk_size());
             size_t total_chunks = chunker_.get_total_chunks(chunk_id);
             
             LOG_INFO("[Agent] Large tool result (%zu bytes) chunked as '%s' (%zu chunks)",
@@ -919,7 +804,13 @@ AgentResult Agent::run(
     const std::string& user_message,
     std::vector<ConversationMessage>& history,
     const std::string& system_prompt,
-    const AgentConfig& config) {
+    const AgentConfig& config,
+    const std::string& channel_id,
+    const std::string& chat_id) {
+    
+    // Store context for debug messages
+    channel_id_ = channel_id;
+    chat_id_ = chat_id;
     
     AgentResult result;
     result.iterations = 0;
@@ -930,8 +821,11 @@ AgentResult Agent::run(
         return result;
     }
     
-    LOG_INFO("[Agent] Starting agentic loop for message: %.50s%s", 
-             user_message.c_str(), user_message.size() > 50 ? "..." : "");
+    LOG_INFO("[Agent] Starting agentic loop (max_iterations=%d, tools=%zu)",
+             config.max_iterations, tools_.size());
+    LOG_DEBUG("[Agent] ▶ IN  User message (%zu chars): %.100s%s", 
+              user_message.size(), user_message.c_str(), user_message.size() > 100 ? "..." : "");
+    LOG_DEBUG("[Agent] ▶ IN  System prompt: %zu chars", system_prompt.size());
     
     // Track initial history size so we can restore on failure
     size_t initial_history_size = history.size();
@@ -958,7 +852,9 @@ AgentResult Agent::run(
     // Agentic loop
     while (result.iterations < config.max_iterations) {
         result.iterations++;
-        LOG_DEBUG("[Agent] === Iteration %d ===", result.iterations);
+        LOG_DEBUG("[Agent] === Iteration %d/%d ===", result.iterations, config.max_iterations);
+        LOG_DEBUG("[Agent] ▶ IN  Sending %zu messages to AI (history size: %zu)",
+                  history.size(), history.size());
         
         // Call AI
         CompletionOptions opts;
@@ -968,7 +864,7 @@ AgentResult Agent::run(
         CompletionResult ai_result = ai->chat(history, opts);
         
         if (!ai_result.success) {
-            LOG_ERROR("[Agent] AI call failed: %s", ai_result.error.c_str());
+            LOG_ERROR("[Agent] ◀ OUT AI call failed: %s", ai_result.error.c_str());
             
             // Check if this is a token limit error
             if (is_token_limit_error(ai_result.error)) {
@@ -998,11 +894,30 @@ AgentResult Agent::run(
             
             consecutive_errors++;
             if (consecutive_errors >= config.max_consecutive_errors) {
-                result.error = "Too many consecutive AI errors: " + ai_result.error;
-                // Restore history to state before this agent run
-                while (history.size() > initial_history_size) {
-                    history.pop_back();
+                LOG_WARN("[Agent] Reached max consecutive errors (%d) - pausing for user decision",
+                         config.max_consecutive_errors);
+                result.success = false;
+                result.paused = true;
+                
+                std::ostringstream err_pause_msg;
+                err_pause_msg << "⚠️ **Task paused after " << consecutive_errors 
+                              << " consecutive AI errors**\n\n";
+                err_pause_msg << "Last error: " << ai_result.error << "\n\n";
+                
+                if (!accumulated_response.empty()) {
+                    err_pause_msg << "Progress so far:\n" << accumulated_response << "\n\n";
                 }
+                
+                err_pause_msg << "The AI encountered repeated errors after "
+                              << result.iterations << " iterations and "
+                              << result.tool_calls_made << " tool calls.\n\n";
+                err_pause_msg << "**Options:**\n";
+                err_pause_msg << "• `/continue` - Retry with 15 more iterations\n";
+                err_pause_msg << "• `/continue <N>` - Retry with N more iterations\n";
+                err_pause_msg << "• `/cancel` - Stop the task\n";
+                
+                result.pause_message = err_pause_msg.str();
+                result.final_response = result.pause_message;
                 return result;
             }
             continue;
@@ -1012,8 +927,8 @@ AgentResult Agent::run(
         token_limit_retries = 0;  // Reset on successful call
         std::string response = ai_result.content;
         
-        LOG_DEBUG("[Agent] AI response length: %zu", response.size());
-        LOG_DEBUG("[Agent] AI response preview: %.300s%s", response.c_str(), 
+        LOG_DEBUG("[Agent] ◀ OUT AI response (%zu chars): %.300s%s", 
+                  response.size(), response.c_str(), 
                   response.size() > 300 ? "..." : "");
         
         // Parse tool calls
@@ -1129,7 +1044,7 @@ AgentResult Agent::run(
             
             // If AI indicated intent but no tool call, prompt it to actually emit the call
             if (indicates_tool_intent && !is_asking_question && result.iterations < config.max_iterations) {
-                LOG_INFO("[Agent] AI indicated tool intent but didn't emit call, prompting to continue");
+                LOG_INFO("[Agent] ▶ IN  AI indicated tool intent, sending continuation prompt");
                 
                 // Add the AI's response to history
                 history.push_back(ConversationMessage::assistant(response));
@@ -1146,8 +1061,8 @@ AgentResult Agent::run(
             }
             
             // No tool calls and no intent - we're done
-            LOG_INFO("[Agent] No tool calls in response, loop complete after %d iterations", 
-                     result.iterations);
+            LOG_INFO("[Agent] ◀ OUT Final response after %d iterations (%d tool calls)", 
+                     result.iterations, result.tool_calls_made);
             
             // Add final response to history
             history.push_back(ConversationMessage::assistant(response));
@@ -1158,7 +1073,7 @@ AgentResult Agent::run(
         }
         
         // Execute tool calls and build results
-        LOG_INFO("[Agent] Found %zu tool call(s) in response", calls.size());
+        LOG_INFO("[Agent] ◀ OUT AI requested %zu tool call(s)", calls.size());
         
         std::ostringstream results_oss;
         bool should_continue = true;
@@ -1230,7 +1145,9 @@ AgentResult Agent::run(
         
         // Add tool results as a user message (this continues the conversation)
         std::string tool_results = results_oss.str();
-        LOG_DEBUG("[Agent] Tool results:\n%s", tool_results.c_str());
+        LOG_DEBUG("[Agent] ▶ IN  Feeding tool results back to AI (%zu chars)", tool_results.size());
+        LOG_DEBUG("[Agent] ▶ IN  Tool results preview: %.500s%s", tool_results.c_str(),
+                  tool_results.size() > 500 ? "..." : "");
         
         history.push_back(ConversationMessage::user(tool_results));
         

@@ -1,10 +1,11 @@
 #include <opencrank/core/http_client.hpp>
+#include <opencrank/core/logger.hpp>
 #include <cstring>
 #include <sstream>
 
 namespace opencrank {
 
-HttpClient::HttpClient() : curl_(nullptr), timeout_ms_(30000) {
+HttpClient::HttpClient() : curl_(nullptr), timeout_ms_(60000) {
     curl_ = curl_easy_init();
 }
 
@@ -19,9 +20,18 @@ void HttpClient::set_timeout(long ms) {
     timeout_ms_ = ms; 
 }
 
+void HttpClient::set_proxy(const std::string& proxy_url) {
+    proxy_url_ = proxy_url;
+}
+
+void HttpClient::clear_proxy() {
+    proxy_url_.clear();
+}
+
 HttpResponse HttpClient::get(const std::string& url, 
-                             const std::map<std::string, std::string>& headers) {
-    return perform_request("GET", url, "", headers);
+                             const std::map<std::string, std::string>& headers,
+                             const std::string& proxy) {
+    return perform_request("GET", url, "", headers, proxy);
 }
 
 HttpResponse HttpClient::post_json(const std::string& url, 
@@ -29,7 +39,7 @@ HttpResponse HttpClient::post_json(const std::string& url,
                                    const std::map<std::string, std::string>& extra_headers) {
     std::map<std::string, std::string> headers = extra_headers;
     headers["Content-Type"] = "application/json";
-    return perform_request("POST", url, body.dump(), headers);
+    return perform_request("POST", url, body.dump(), headers, "");
 }
 
 HttpResponse HttpClient::post_json(const std::string& url, 
@@ -37,7 +47,7 @@ HttpResponse HttpClient::post_json(const std::string& url,
                                    const std::map<std::string, std::string>& extra_headers) {
     std::map<std::string, std::string> headers = extra_headers;
     headers["Content-Type"] = "application/json";
-    return perform_request("POST", url, body, headers);
+    return perform_request("POST", url, body, headers, "");
 }
 
 HttpResponse HttpClient::post_form(const std::string& url,
@@ -52,7 +62,7 @@ HttpResponse HttpClient::post_form(const std::string& url,
         if (!body.empty()) body += "&";
         body += url_encode(curl_, it->first) + "=" + url_encode(curl_, it->second);
     }
-    return perform_request("POST", url, body, headers);
+    return perform_request("POST", url, body, headers, "");
 }
 
 size_t HttpClient::write_callback(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -119,7 +129,8 @@ std::string HttpClient::url_encode(CURL* curl, const std::string& s) {
 HttpResponse HttpClient::perform_request(const std::string& method,
                                          const std::string& url,
                                          const std::string& body,
-                                         const std::map<std::string, std::string>& headers) {
+                                         const std::map<std::string, std::string>& headers,
+                                         const std::string& proxy) {
     HttpResponse resp;
     
     if (!curl_) {
@@ -132,6 +143,18 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     
     // Set URL
     curl_easy_setopt(curl_, CURLOPT_URL, url.c_str());
+    
+    // Determine which proxy to use: parameter overrides instance proxy
+    std::string effective_proxy = proxy.empty() ? proxy_url_ : proxy;
+    
+    if (!effective_proxy.empty()) {
+        LOG_DEBUG("[HTTP] ▶ OUT %s %s (body: %zu bytes, proxy: %s)", 
+                  method.c_str(), url.c_str(), body.size(), effective_proxy.c_str());
+        curl_easy_setopt(curl_, CURLOPT_PROXY, effective_proxy.c_str());
+    } else {
+        LOG_DEBUG("[HTTP] ▶ OUT %s %s (body: %zu bytes)", 
+                  method.c_str(), url.c_str(), body.size());
+    }
     
     // Set timeout
     curl_easy_setopt(curl_, CURLOPT_TIMEOUT_MS, timeout_ms_);
@@ -182,6 +205,8 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     // SSL verification (enabled by default)
     curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYHOST, 2L);
+
+    curl_easy_setopt(curl_, CURLOPT_VERBOSE, 1L);
     
     // Perform the request
     CURLcode res = curl_easy_perform(curl_);
@@ -192,6 +217,7 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     }
     
     if (res != CURLE_OK) {
+        LOG_DEBUG("[HTTP] ◀ IN  %s %s FAILED: %s", method.c_str(), url.c_str(), curl_easy_strerror(res));
         resp.error = curl_easy_strerror(res);
         return resp;
     }
@@ -201,6 +227,9 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     
     resp.body = response_body;
     resp.headers = response_headers;
+    
+    LOG_DEBUG("[HTTP] ◀ IN  %s %s -> HTTP %ld (%zu bytes)", 
+              method.c_str(), url.c_str(), resp.status_code, resp.body.size());
     
     if (!resp.ok() && resp.error.empty()) {
         std::ostringstream oss;

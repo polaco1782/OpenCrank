@@ -120,7 +120,7 @@ SendResult WhatsAppChannel::send_typing_action(const std::string& to) {
     if (mode_ == MODE_CLOUD_API) {
         // WhatsApp Cloud API doesn't have a typing indicator endpoint
         // It's a limitation of the official API
-        LOG_DEBUG("WhatsApp Cloud API: typing indicator not supported");
+        LOG_DEBUG("[WhatsApp] ◀ OUT Cloud API: typing indicator not supported");
         return SendResult::fail("Typing action not supported in Cloud API mode");
     } else if (mode_ == MODE_BRIDGE) {
         // Bridge mode might support typing via custom endpoint
@@ -136,7 +136,7 @@ SendResult WhatsAppChannel::send_typing_action(const std::string& to) {
             return SendResult::fail("HTTP error: " + resp.error);
         }
         
-        LOG_DEBUG("WhatsApp: sent typing action to %s", to.c_str());
+        LOG_DEBUG("[WhatsApp] ◀ OUT Sent typing action to %s", to.c_str());
         return SendResult::ok("");
     }
     return SendResult::fail("WhatsApp not configured");
@@ -226,7 +226,8 @@ SendResult WhatsAppChannel::send_cloud_api(const std::string& to, const std::str
     if (result.contains("messages") && result["messages"].is_array() && !result["messages"].empty()) {
         msg_id = result["messages"][0].value("id", std::string(""));
     }
-    LOG_DEBUG("WhatsApp: sent message to %s (id=%s)", phone.c_str(), msg_id.c_str());
+    LOG_DEBUG("[WhatsApp] ◀ OUT Sent message to %s via Cloud API (id=%s, %zu chars)", 
+              phone.c_str(), msg_id.c_str(), text.size());
     return SendResult::ok(msg_id);
 }
 
@@ -269,7 +270,8 @@ SendResult WhatsAppChannel::send_bridge(const std::string& to, const std::string
     }
     
     std::string msg_id = result.value("message_id", std::string(""));
-    LOG_DEBUG("WhatsApp: sent message to %s via bridge (id=%s)", to.c_str(), msg_id.c_str());
+    LOG_DEBUG("[WhatsApp] ◀ OUT Sent message to %s via Bridge (id=%s, %zu chars)", 
+              to.c_str(), msg_id.c_str(), text.size());
     return SendResult::ok(msg_id);
 }
 
@@ -312,8 +314,9 @@ void WhatsAppChannel::process_bridge_message(const Json& msg) {
         m.reply_to_id = msg.value("reply_to", std::string(""));
     }
     
-    LOG_DEBUG("WhatsApp: received message from %s: %s", 
-              m.from_name.c_str(), m.text.c_str());
+    LOG_DEBUG("[WhatsApp] ▶ IN  Message from %s (%s): %.200s%s", 
+              m.from_name.c_str(), m.from.c_str(), m.text.c_str(),
+              m.text.size() > 200 ? "..." : "");
     
     emit_message(m);
 }

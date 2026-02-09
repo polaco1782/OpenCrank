@@ -78,6 +78,7 @@ std::vector<AgentTool> BrowserTool::get_agent_tools() const {
         tool.params.push_back(ToolParamSchema("url", "string", "The URL to fetch (must start with http:// or https://)", true));
         tool.params.push_back(ToolParamSchema("max_length", "number", "Maximum content length to return (default: 100000)", false));
         tool.params.push_back(ToolParamSchema("extract_text", "boolean", "If true, strip HTML tags and return plain text (default: false)", false));
+        tool.params.push_back(ToolParamSchema("proxy", "string", "Proxy URL to use. Supports HTTP (http://host:port), SOCKS5 (socks5://host:port), SOCKS4 (socks4://host:port). Optional authentication: http://user:pass@host:port", false));
         
         tool.execute = [self](const Json& params) -> AgentToolResult {
             ToolResult result = self->execute("fetch", params);
@@ -180,6 +181,7 @@ ToolResult BrowserTool::do_fetch(const Json& params) {
     }
 
     std::string url = params["url"].get<std::string>();
+    LOG_DEBUG("[Browser] ▶ OUT Fetching URL: %s", url.c_str());
 
     // Validate URL format
     if (url.find("http://") != 0 && url.find("https://") != 0) {
@@ -204,8 +206,17 @@ ToolResult BrowserTool::do_fetch(const Json& params) {
         }
     }
 
+    // Get proxy parameter if provided
+    std::string proxy;
+    if (params.contains("proxy") && params["proxy"].is_string()) {
+        proxy = params["proxy"].get<std::string>();
+    }
+    
     // Make HTTP request
-    HttpResponse response = http_.get(url, headers);
+    HttpResponse response = http_.get(url, headers, proxy);
+    
+    LOG_DEBUG("[Browser] ◀ IN  Response from %s: HTTP %ld (%zu bytes)", 
+              url.c_str(), response.status_code, response.body.size());
 
     // Build result data
     Json data;

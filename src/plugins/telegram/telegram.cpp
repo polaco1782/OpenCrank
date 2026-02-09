@@ -18,6 +18,93 @@ std::string escape_html(const std::string& text) {
     }
     return escaped;
 }
+
+// Convert Markdown to HTML for Telegram
+std::string markdown_to_html(const std::string& text) {
+    std::string result;
+    result.reserve(text.size() * 1.2);
+    
+    size_t i = 0;
+    while (i < text.size()) {
+        // Headers: ## Header or ### Header
+        if ((i == 0 || text[i-1] == '\n') && text[i] == '#') {
+            size_t hash_count = 0;
+            while (i < text.size() && text[i] == '#') {
+                hash_count++;
+                i++;
+            }
+            // Skip space after hashes
+            if (i < text.size() && text[i] == ' ') i++;
+            
+            // Find end of line
+            size_t line_start = i;
+            while (i < text.size() && text[i] != '\n') i++;
+            
+            std::string header_text = escape_html(text.substr(line_start, i - line_start));
+            result += "<b>" + header_text + "</b>\n";
+            if (i < text.size()) i++; // skip newline
+            continue;
+        }
+        
+        // Bold: **text**
+        if (i + 1 < text.size() && text[i] == '*' && text[i+1] == '*') {
+            i += 2;
+            size_t start = i;
+            while (i + 1 < text.size() && !(text[i] == '*' && text[i+1] == '*')) i++;
+            
+            if (i + 1 < text.size()) {
+                result += "<b>" + escape_html(text.substr(start, i - start)) + "</b>";
+                i += 2;
+            } else {
+                result += "**" + escape_html(text.substr(start, i - start));
+            }
+            continue;
+        }
+        
+        // Italic: *text* or _text_
+        if (text[i] == '*' || text[i] == '_') {
+            char marker = text[i];
+            i++;
+            size_t start = i;
+            while (i < text.size() && text[i] != marker) i++;
+            
+            if (i < text.size()) {
+                result += "<i>" + escape_html(text.substr(start, i - start)) + "</i>";
+                i++;
+            } else {
+                result += marker;
+                result += escape_html(text.substr(start, i - start));
+            }
+            continue;
+        }
+        
+        // Code: `text`
+        if (text[i] == '`') {
+            i++;
+            size_t start = i;
+            while (i < text.size() && text[i] != '`') i++;
+            
+            if (i < text.size()) {
+                result += "<code>" + escape_html(text.substr(start, i - start)) + "</code>";
+                i++;
+            } else {
+                result += "`" + escape_html(text.substr(start, i - start));
+            }
+            continue;
+        }
+        
+        // Escape HTML special chars and copy
+        switch (text[i]) {
+            case '&': result += "&amp;"; break;
+            case '<': result += "&lt;"; break;
+            case '>': result += "&gt;"; break;
+            default: result += text[i]; break;
+        }
+        i++;
+    }
+    
+    return result;
+}
 } // namespace
 
 TelegramChannel::TelegramChannel() 
@@ -141,7 +228,7 @@ SendResult TelegramChannel::send_typing_action(const std::string& to) {
     params["chat_id"] = to;
     params["action"] = "typing";
     
-    LOG_DEBUG("Telegram: sending typing action to chat_id=%s", to.c_str());
+    LOG_DEBUG("[Telegram] ◀ OUT Sending typing action to chat_id=%s", to.c_str());
     
     // Use a quick timeout for typing actions (they're fire-and-forget)
     http_send_.set_timeout(3000);
@@ -161,7 +248,7 @@ SendResult TelegramChannel::send_typing_action(const std::string& to) {
         return SendResult::fail("API error: " + desc);
     }
     
-    LOG_INFO("Telegram: typing action sent successfully to %s", to.c_str());
+    LOG_DEBUG("[Telegram] ◀ OUT Typing action sent to %s", to.c_str());
     return SendResult::ok("");
 }
 
@@ -211,7 +298,7 @@ void TelegramChannel::polling_loop() {
 SendResult TelegramChannel::send_message_impl(const std::string& to, const std::string& text, int64_t reply_to) {
     Json params = Json::object();
     params["chat_id"] = to;
-    params["text"] = escape_html(text);
+    params["text"] = markdown_to_html(text);
     params["parse_mode"] = "HTML";
     
     if (reply_to > 0) {
@@ -234,7 +321,8 @@ SendResult TelegramChannel::send_message_impl(const std::string& to, const std::
     std::ostringstream msg_id;
     msg_id << result["result"].value("message_id", int64_t(0));
     
-    LOG_DEBUG("Telegram: sent message to %s (id=%s)", to.c_str(), msg_id.str().c_str());
+    LOG_DEBUG("[Telegram] ◀ OUT Sent message to %s (id=%s, %zu chars)", 
+              to.c_str(), msg_id.str().c_str(), text.size());
     return SendResult::ok(msg_id.str());
 }
 
@@ -308,6 +396,9 @@ void TelegramChannel::process_update(const Json& update) {
     m.timestamp = msg.value("date", int64_t(0));
     
     if (!m.text.empty()) {
+        LOG_DEBUG("[Telegram] ▶ IN  Message from %s (%s): %.200s%s", 
+                  m.from_name.c_str(), m.from.c_str(), m.text.c_str(),
+                  m.text.size() > 200 ? "..." : "");
         emit_message(m);
     }
 }

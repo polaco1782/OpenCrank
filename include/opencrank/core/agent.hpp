@@ -17,6 +17,7 @@
 
 #include "json.hpp"
 #include "logger.hpp"
+#include "content_chunker.hpp"
 #include <string>
 #include <vector>
 #include <map>
@@ -110,70 +111,41 @@ struct ParsedToolCall {
 };
 
 // ============================================================================
-// Content Chunker - Handles large content that exceeds token limits
-// ============================================================================
-
-struct ChunkedContent {
-    std::string id;              // Unique identifier for this content
-    std::string full_content;    // The complete content
-    std::string source;          // Where this content came from (tool name, url, etc.)
-    size_t chunk_size;           // Size of each chunk in characters
-    size_t total_chunks;         // Total number of chunks
-    
-    ChunkedContent() : chunk_size(8000), total_chunks(0) {}
-};
-
-class ContentChunker {
-public:
-    ContentChunker();
-    
-    // Store content and return a unique ID
-    // Returns the ID and a summary that can be shown to the AI
-    std::string store(const std::string& content, const std::string& source, size_t chunk_size = 8000);
-    
-    // Get a specific chunk (0-indexed)
-    std::string get_chunk(const std::string& id, size_t chunk_index) const;
-    
-    // Get summary info about stored content
-    std::string get_info(const std::string& id) const;
-    
-    // Search within stored content
-    std::string search(const std::string& id, const std::string& query, size_t context_chars = 500) const;
-    
-    // Check if content exists
-    bool has(const std::string& id) const;
-    
-    // Clear stored content
-    void clear();
-    void remove(const std::string& id);
-    
-    // Get total chunks for an ID
-    size_t get_total_chunks(const std::string& id) const;
-    
-private:
-    std::map<std::string, ChunkedContent> storage_;
-    int next_id_;
-};
-
-// ============================================================================
 // Agent Loop Configuration
 // ============================================================================
 
 struct AgentConfig {
-    int max_iterations;             // Maximum tool call iterations (default: 10)
-    int max_consecutive_errors;     // Stop after this many consecutive errors (default: 3)
+    int max_iterations;             // Maximum tool call iterations (default: 15)
+    int max_consecutive_errors;     // Stop after this many consecutive errors (default: 5)
     bool echo_tool_calls;           // Include tool calls in response (default: false)
     bool verbose_results;           // Include full tool results in response (default: false)
     size_t max_tool_result_size;    // Max chars before chunking (default: 15000)
     bool auto_chunk_large_results;  // Automatically chunk large tool results (default: true)
+    size_t chunk_size;              // Chunk size in chars for large content (0 = auto from context_size)
+    size_t context_size;            // Context size in tokens from the AI model (0 = use defaults)
     
     AgentConfig() 
-        : max_iterations(10)
-        , max_consecutive_errors(3)
+        : max_iterations(15)
+        , max_consecutive_errors(5)
         , echo_tool_calls(false)
         , verbose_results(false)
         , max_tool_result_size(15000)
-        , auto_chunk_large_results(true) {}
+        , auto_chunk_large_results(true)
+        , chunk_size(0)
+        , context_size(0) {}
+    
+    // Get effective chunk size: if chunk_size is set use it,
+    // otherwise derive from context_size (10% of context in chars),
+    // otherwise fall back to 8000
+    size_t effective_chunk_size() const {
+        if (chunk_size > 0) return chunk_size;
+        if (context_size > 0) {
+            // Use ~10% of context window (tokens * 4 chars/token * 0.10)
+            size_t derived = (context_size * 4) / 10;
+            return derived > 2000 ? derived : 2000;  // minimum 2000 chars
+        }
+        return 8000;  // fallback default
+    }
 };
 
 // ============================================================================
@@ -232,7 +204,9 @@ public:
         const std::string& user_message,
         std::vector<ConversationMessage>& history,
         const std::string& system_prompt,
-        const AgentConfig& config = AgentConfig()
+        const AgentConfig& config = AgentConfig(),
+        const std::string& channel_id = "",
+        const std::string& chat_id = ""
     );
     
     // Configuration
@@ -247,6 +221,10 @@ private:
     std::map<std::string, AgentTool> tools_;
     AgentConfig config_;
     ContentChunker chunker_;
+    
+    // Context for debug messages
+    std::string channel_id_;
+    std::string chat_id_;
     
     // Helper to check if response contains tool calls
     bool has_tool_calls(const std::string& response) const;

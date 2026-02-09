@@ -4,7 +4,7 @@
 # Compiler and flags
 CXX = g++
 CXXFLAGS = -std=c++11 -Wall -Wextra -O2 -I../../../include
-CXXFLAGS_PIC = $(CXXFLAGS) -fPIC -fvisibility=hidden
+CXXFLAGS_PIC = $(CXXFLAGS) -fPIC
 LDFLAGS = -lpthread -lsqlite3 -lssl -lcrypto -lcurl -ldl
 LDFLAGS_PLUGIN = -shared
 
@@ -26,7 +26,10 @@ CORE_OBJECTS = $(BUILD_DIR)/types.o \
                $(BUILD_DIR)/loader.o \
                $(BUILD_DIR)/ai.o \
                $(BUILD_DIR)/memory_store.o \
-               $(BUILD_DIR)/memory_manager.o
+               $(BUILD_DIR)/memory_manager.o \
+               $(BUILD_DIR)/memory_tool.o \
+               $(BUILD_DIR)/context_manager.o \
+               $(BUILD_DIR)/content_chunker.o
 
 # Plugin-specific objects (derived from PLUGIN_SOURCES)
 PLUGIN_OBJECTS = $(PLUGIN_SOURCES:.cpp=.o)

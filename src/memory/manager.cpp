@@ -198,6 +198,70 @@ std::string MemoryManager::get_memory_content(const std::string& path) {
     return load_memory_file(path);
 }
 
+// Structured memory operations (SQLite-backed)
+
+bool MemoryManager::save_structured_memory(const std::string& content, const std::string& category,
+                                            const std::string& tags, int importance,
+                                            const std::string& session_key) {
+    if (!initialized_) {
+        set_error("Memory manager not initialized");
+        return false;
+    }
+    
+    MemoryEntry entry;
+    entry.id = generate_uuid();
+    entry.content = content;
+    entry.category = category;
+    entry.tags = tags;
+    entry.importance = importance;
+    entry.session_key = session_key;
+    entry.created_at = get_current_timestamp();
+    entry.updated_at = entry.created_at;
+    entry.expires_at = 0;
+    
+    return store_->upsert_memory(entry);
+}
+
+bool MemoryManager::save_structured_memory(const MemoryEntry& entry) {
+    if (!initialized_) {
+        set_error("Memory manager not initialized");
+        return false;
+    }
+    
+    MemoryEntry e = entry;
+    if (e.id.empty()) e.id = generate_uuid();
+    if (e.created_at == 0) e.created_at = get_current_timestamp();
+    if (e.updated_at == 0) e.updated_at = e.created_at;
+    
+    return store_->upsert_memory(e);
+}
+
+std::vector<MemoryEntry> MemoryManager::search_structured_memories(const std::string& query, int limit) {
+    if (!initialized_) return std::vector<MemoryEntry>();
+    store_->cleanup_expired_memories();
+    return store_->search_memories(query, limit);
+}
+
+std::vector<MemoryEntry> MemoryManager::list_structured_memories(const std::string& category, int limit) {
+    if (!initialized_) return std::vector<MemoryEntry>();
+    return store_->list_memories(category, limit);
+}
+
+bool MemoryManager::delete_structured_memory(const std::string& id) {
+    if (!initialized_) return false;
+    return store_->delete_memory(id);
+}
+
+int MemoryManager::count_structured_memories(const std::string& category) {
+    if (!initialized_) return 0;
+    return store_->count_memories(category);
+}
+
+bool MemoryManager::cleanup_expired_memories() {
+    if (!initialized_) return false;
+    return store_->cleanup_expired_memories();
+}
+
 // Task operations
 std::string MemoryManager::create_task(const std::string& content, const std::string& context) {
     if (!initialized_) {

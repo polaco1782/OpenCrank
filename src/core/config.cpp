@@ -97,6 +97,23 @@ int64_t Config::get_int(const std::string& key, int64_t def) const {
 }
 
 bool Config::get_bool(const std::string& key, bool def) const {
+    // Support dot notation for nested keys
+    size_t dot_pos = key.find('.');
+    if (dot_pos != std::string::npos) {
+        std::string section = key.substr(0, dot_pos);
+        std::string subkey = key.substr(dot_pos + 1);
+        
+        if (data_.contains(section)) {
+            const Json& sec = data_[section];
+            if (sec.contains(subkey) && sec[subkey].is_boolean()) {
+                LOG_DEBUG("Config: found key '%s.%s'", section.c_str(), subkey.c_str());
+                return sec[subkey].get<bool>();
+            }
+        }
+        LOG_DEBUG("Config: key '%s' not found in section '%s'", subkey.c_str(), section.c_str());
+        return def;
+    }
+    
     if (data_.contains(key) && data_[key].is_boolean()) {
         LOG_DEBUG("Config: found key '%s'", key.c_str());
         return data_[key].get<bool>();

@@ -153,6 +153,33 @@
             white-space: pre-wrap;
         }
         
+        .message h1, .message h2, .message h3 {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin: 8px 0 4px 0;
+            line-height: 1.3;
+        }
+        
+        .message h1 { font-size: 1.4em; }
+        .message h2 { font-size: 1.3em; }
+        .message h3 { font-size: 1.2em; }
+        
+        .message strong {
+            font-weight: bold;
+        }
+        
+        .message em {
+            font-style: italic;
+        }
+        
+        .message code {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
         .message.sent {
             align-self: flex-end;
             background: var(--msg-sent);
@@ -456,6 +483,36 @@
             }
         }
         
+        // Convert Markdown to HTML for display
+        function markdownToHtml(text) {
+            let html = text;
+            
+            // Escape HTML first
+            html = html.replace(/&/g, '&amp;')
+                       .replace(/</g, '&lt;')
+                       .replace(/>/g, '&gt;');
+            
+            // Headers (must be at line start)
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            
+            // Bold: **text**
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            
+            // Italic: *text* or _text_
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+            
+            // Code: `text`
+            html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+            
+            // Line breaks
+            html = html.replace(/\n/g, '<br>');
+            
+            return html;
+        }
+        
         function addMessage(msg, type = 'received') {
             // Remove empty state if present
             const emptyState = messagesEl.querySelector('.empty-state');
@@ -467,7 +524,7 @@
             messageEl.className = `message ${type}`;
             
             const textEl = document.createElement('div');
-            textEl.textContent = msg.text;
+            textEl.innerHTML = markdownToHtml(msg.text);
             messageEl.appendChild(textEl);
             
             const metaEl = document.createElement('div');
@@ -597,6 +654,11 @@
                 } else {
                     hideTyping();
                 }
+            } else if (msg.event === 'chat.outgoing') {
+                // Incoming message from a channel
+                const chatMsg = msg.payload;
+                log(`Message from ${chatMsg.from_name} on ${chatMsg.channel}`, 'debug');
+                addMessage(chatMsg, 'received');
             } else {
                 log(`Event: ${msg.event}`, 'info');
             }

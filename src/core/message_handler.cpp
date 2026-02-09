@@ -44,6 +44,9 @@ void notify_outgoing_message(
             plugin->on_incoming_message(out_msg);
         }
     }
+    
+    LOG_DEBUG("[MessageHandler] ◀ OUT Notified %zu plugins of outgoing response to %s",
+              app.registry().plugins().size(), to.c_str());
 }
 
 // ============================================================================
@@ -67,8 +70,9 @@ void on_message(const Message& msg) {
         return;
     }
     
-    LOG_INFO("[%s] Message from %s: %s", 
-             msg.channel.c_str(), msg.from_name.c_str(), msg.text.c_str());
+    LOG_INFO("[%s] ▶ IN  Message from %s: %.200s%s", 
+             msg.channel.c_str(), msg.from_name.c_str(), msg.text.c_str(),
+             msg.text.size() > 200 ? "..." : "");
     
     // Notify all plugins
     for (auto* plugin : app.registry().plugins()) {
@@ -157,7 +161,7 @@ bool handle_skill_command(
     const auto* spec = skill_cmd.first;
     const auto& skill_args = skill_cmd.second;
     
-    LOG_INFO("Skill command invoked: %s (args: %s)", spec->skill_name.c_str(), skill_args.c_str());
+    LOG_INFO("[Skills] ▶ IN  Skill command invoked: %s (args: %s)", spec->skill_name.c_str(), skill_args.c_str());
     
     if (!spec->dispatch.empty() && spec->dispatch.kind == "tool") {
         // Direct tool dispatch - not implemented yet
@@ -208,15 +212,17 @@ bool handle_skill_command(
     
     LOG_INFO("[Skills] Starting agentic loop for skill: %s", spec->skill_name.c_str());
     
-    AgentConfig agent_config;
-    agent_config.max_iterations = 15;
+    // Use agent config from application (loaded from config file)
+    AgentConfig agent_config = app.agent().config();
     
     auto agent_result = app.agent().run(
         ai, 
         rewritten, 
         session.history(), 
         app.system_prompt(),
-        agent_config
+        agent_config,
+        msg.channel,
+        msg.to
     );
     
     LOG_DEBUG("[Skills] Agent loop completed: success=%s, iterations=%d, tool_calls=%d",
@@ -226,10 +232,11 @@ bool handle_skill_command(
     
     if (agent_result.success) {
         response_out = agent_result.final_response;
-        LOG_INFO("Skill executed via %d tool calls", agent_result.tool_calls_made);
+        LOG_INFO("[Skills] ◀ OUT Skill completed via %d tool calls (response: %zu chars)", 
+                 agent_result.tool_calls_made, response_out.size());
     } else {
         response_out = "❌ Skill execution failed: " + agent_result.error;
-        LOG_ERROR("Skill execution failed: %s", agent_result.error.c_str());
+        LOG_ERROR("[Skills] ◀ OUT Skill execution failed: %s", agent_result.error.c_str());
     }
     
     app.typing().stop_typing(msg.to);
@@ -256,46 +263,53 @@ std::string handle_ai_message(
     // Start typing indicator
     app.typing().start_typing(msg.to);
     
-    LOG_DEBUG("[AI] === Processing user message via agentic loop ===");
-    LOG_DEBUG("[AI] User: %s", msg.from_name.c_str());
-    LOG_DEBUG("[AI] Message: %s", msg.text.c_str());
+    LOG_DEBUG("[AI] === ▶ IN  User message entering agentic loop ===");
+    LOG_DEBUG("[AI] ▶ IN  User: %s", msg.from_name.c_str());
+    LOG_DEBUG("[AI] ▶ IN  Channel: %s, To: %s", msg.channel.c_str(), msg.to.c_str());
+    LOG_DEBUG("[AI] ▶ IN  Message (%zu chars): %.200s%s", 
+              msg.text.size(), msg.text.c_str(),
+              msg.text.size() > 200 ? "..." : "");
     LOG_DEBUG("[AI] Session history size: %zu messages", session.history().size());
-    LOG_DEBUG("[AI] System prompt length: %zu chars", app.system_prompt().size());
+    LOG_DEBUG("[AI] System prompt length: %zu chars (~%zu tokens)", 
+              app.system_prompt().size(), app.system_prompt().size() / 4);
     LOG_DEBUG("[AI] Registered tools: %zu", app.agent().tools().size());
     
     // Run agentic loop with heartbeat callbacks
-    AgentConfig agent_config;
-    agent_config.max_iterations = 15;
-    agent_config.max_consecutive_errors = 3;
-    
-    // Add heartbeat callback to agent config (if AgentConfig supports it)
-    // For now, we'll send heartbeats periodically from a wrapper
+    // Use agent config from application (loaded from config file)
+    AgentConfig agent_config = app.agent().config();
     
     auto agent_result = app.agent().run(
         ai, 
         msg.text, 
         session.history(), 
         app.system_prompt(),
-        agent_config
+        agent_config,
+        msg.channel,
+        msg.to
     );
     
-    LOG_DEBUG("[AI] === Agent loop complete ===");
-    LOG_DEBUG("[AI] Success: %s, Paused: %s", 
+    LOG_DEBUG("[AI] === ◀ OUT Agent loop complete ===");
+    LOG_DEBUG("[AI] ◀ OUT Success: %s, Paused: %s", 
               agent_result.success ? "yes" : "no",
               agent_result.paused ? "yes" : "no");
-    LOG_DEBUG("[AI] Iterations: %d", agent_result.iterations);
-    LOG_DEBUG("[AI] Tool calls: %d", agent_result.tool_calls_made);
-    LOG_DEBUG("[AI] Response length: %zu chars", agent_result.final_response.size());
+    LOG_DEBUG("[AI] ◀ OUT Iterations: %d, Tool calls: %d", 
+              agent_result.iterations, agent_result.tool_calls_made);
+    LOG_DEBUG("[AI] ◀ OUT Response (%zu chars): %.200s%s", 
+              agent_result.final_response.size(),
+              agent_result.final_response.c_str(),
+              agent_result.final_response.size() > 200 ? "..." : "");
     
     std::string response;
     if (agent_result.paused) {
         // Store paused state in session for /continue command
+        // This handles both max_iterations and max_consecutive_errors pauses
         session.set_data("agent_paused", "true");
         session.set_data("agent_iterations", std::to_string(agent_result.iterations));
         session.set_data("agent_tool_calls", std::to_string(agent_result.tool_calls_made));
         
         response = agent_result.pause_message;
-        LOG_INFO("[AI] Agent paused after %d iterations, awaiting /continue", agent_result.iterations);
+        LOG_INFO("[AI] Agent paused after %d iterations (%d tool calls), awaiting /continue", 
+                 agent_result.iterations, agent_result.tool_calls_made);
     } else if (agent_result.success) {
         // Clear any paused state
         session.remove_data("agent_paused");
@@ -370,7 +384,9 @@ void send_response(
             }
 
             if (result.success) {
-                LOG_DEBUG("[MessageHandler] Message sent to %s: %s", channel_id.c_str(), result.message_id.c_str());
+                LOG_DEBUG("[MessageHandler] ◀ OUT Sent to %s (msg_id=%s, chunk %zu/%zu)", 
+                          channel_id.c_str(), result.message_id.c_str(),
+                          i + 1, chunks.size());
                 notify_outgoing_message(channel_id, original_msg.to, chunk, original_msg.id);
             } else {
                 LOG_ERROR("Failed to send response to %s: %s", channel_id.c_str(), result.error.c_str());
@@ -395,7 +411,9 @@ void send_response(
 void process_message(const Message& msg) {
     auto& app = Application::instance();
     
-    LOG_DEBUG("[AI] Processing message from %s: %s", msg.from_name.c_str(), msg.text.c_str());
+    LOG_DEBUG("[AI] ▶ IN  Processing message from %s: %.100s%s", 
+              msg.from_name.c_str(), msg.text.c_str(),
+              msg.text.size() > 100 ? "..." : "");
     
     auto* channel = app.registry().get_channel(msg.channel);
     if (!channel || msg.text.empty()) {

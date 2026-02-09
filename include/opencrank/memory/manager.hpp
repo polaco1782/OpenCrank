@@ -61,6 +61,17 @@ public:
     // Get file content by path (legacy)
     std::string get_memory_content(const std::string& path);
     
+    // Structured memory operations (SQLite-backed)
+    bool save_structured_memory(const std::string& content, const std::string& category = "general",
+                                const std::string& tags = "", int importance = 5,
+                                const std::string& session_key = "");
+    bool save_structured_memory(const MemoryEntry& entry);
+    std::vector<MemoryEntry> search_structured_memories(const std::string& query, int limit = 10);
+    std::vector<MemoryEntry> list_structured_memories(const std::string& category = "", int limit = 100);
+    bool delete_structured_memory(const std::string& id);
+    int count_structured_memories(const std::string& category = "");
+    bool cleanup_expired_memories();
+    
     // Task operations
     std::string create_task(const std::string& content, const std::string& context = "");
     bool complete_task(const std::string& task_id);

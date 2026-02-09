@@ -258,10 +258,9 @@ std::string cmd_continue(const Message& msg, Session& session, const std::string
     LOG_INFO("[continue] Resuming agent loop with %d more iterations (prev: %d iterations, %d tool calls)",
              additional_iterations, prev_iterations, prev_tool_calls);
     
-    // Configure agent with new limit
-    AgentConfig agent_config;
+    // Configure agent with new limit (inherit other settings from app config)
+    AgentConfig agent_config = app.agent().config();
     agent_config.max_iterations = additional_iterations;
-    agent_config.max_consecutive_errors = 3;
     
     // Run agent loop with continuation message
     auto agent_result = app.agent().run(

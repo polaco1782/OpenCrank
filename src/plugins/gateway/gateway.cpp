@@ -408,6 +408,9 @@ void GatewayPlugin::broadcast(const std::string& event, const Json& payload) {
     
     std::string data = message.dump();
     
+    LOG_DEBUG("[Gateway] ◀ OUT Broadcasting event '%s' to %zu clients (%zu bytes)", 
+              event.c_str(), clients_.size(), data.size());
+    
     for (auto it = clients_.begin(); it != clients_.end(); ++it) {
         (*it)->send(data);
     }
@@ -464,6 +467,9 @@ void GatewayPlugin::handle_client_message(GatewayClient* client,
     
     std::string type = request.value("type", std::string(""));
     
+    LOG_DEBUG("[Gateway] ▶ IN  WS message from %s: type=%s", 
+              client->conn_id().c_str(), type.c_str());
+    
     // Handle different message types
     Json response;
     
@@ -519,6 +525,9 @@ void GatewayPlugin::handle_client_message(GatewayClient* client,
     
     // Send response
     if (response.is_object()) {
+        LOG_DEBUG("[Gateway] ◀ OUT WS response to %s: type=%s", 
+                  client->conn_id().c_str(), 
+                  response.value("type", std::string("unknown")).c_str());
         client->send_json(response);
     }
 }
@@ -615,7 +624,9 @@ Json GatewayPlugin::handle_chat_send(GatewayClient* client, const Json& params) 
     std::string text = params.value("text", std::string(""));
     std::string reply_to = params.value("reply_to", std::string(""));
 
-    LOG_INFO("Gateway chat.send: text=%s", text.c_str());
+    LOG_INFO("[Gateway] ▶ IN  chat.send from %s: text=%.100s%s", 
+             client->conn_id().c_str(), text.c_str(),
+             text.size() > 100 ? "..." : "");
 
     // Create a Message object to send through the system for AI processing
     Message msg;
@@ -631,8 +642,8 @@ Json GatewayPlugin::handle_chat_send(GatewayClient* client, const Json& params) 
         msg.reply_to_id = reply_to;
     }
 
-    LOG_DEBUG("[Gateway] Creating message for AI processing: from=%s to=%s", 
-              msg.from.c_str(), msg.to.c_str());
+    LOG_DEBUG("[Gateway] ▶ IN  Creating message for AI processing: from=%s to=%s, text_len=%zu", 
+              msg.from.c_str(), msg.to.c_str(), msg.text.size());
 
     // Fire the message through the channel callback (inherited from ChannelPlugin)
     // This will route it through the message handler for AI processing
@@ -684,8 +695,9 @@ void GatewayPlugin::route_incoming_message(const Message& msg) {
         event_payload["media_url"] = msg.media_url;
     }
     
-    LOG_DEBUG("[Gateway] routing incoming message from %s: %s", 
-              msg.from_name.c_str(), msg.text.c_str());
+    LOG_DEBUG("[Gateway] ◀ OUT Routing incoming message to %zu WS clients: from=%s, text=%.100s%s", 
+              clients_.size(), msg.from_name.c_str(), msg.text.c_str(),
+              msg.text.size() > 100 ? "..." : "");
     
     broadcast("chat.message", event_payload);
 }

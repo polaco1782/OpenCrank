@@ -38,6 +38,16 @@ bool LlamaCppAI::init(const Config& cfg) {
     
     LOG_INFO("Llama.cpp AI initialized with server: %s, model: %s, context: %d tokens (~%zu chars)", 
              server_url_.c_str(), default_model_.c_str(), context_tokens, max_context_chars_);
+    
+    // Configure the context manager for intelligent context window management
+    ContextManagerConfig ctx_config;
+    ctx_config.max_context_chars = max_context_chars_;
+    ctx_config.reserve_for_response = max_context_chars_ / 4;  // Reserve 25% for response
+    ctx_config.usage_threshold = 0.75;  // Trigger resume at 75%
+    ctx_config.max_resume_chars = 3000;
+    ctx_config.auto_save_memory = true;
+    context_manager_.set_config(ctx_config);
+    
     initialized_ = true;
     return true;
 }
@@ -86,10 +96,10 @@ CompletionResult LlamaCppAI::chat(
     
     LOG_DEBUG("[LlamaCpp] Starting chat request with %zu messages", messages.size());
     
-    // Proactively trim messages to fit within context budget
-    std::vector<ConversationMessage> trimmed_messages = trim_messages_to_fit(messages, opts.system_prompt);
-    if (trimmed_messages.size() < messages.size()) {
-        LOG_INFO("[LlamaCpp] Trimmed conversation from %zu to %zu messages to fit context window",
+    // Manage context window intelligently (resume-based strategy)
+    std::vector<ConversationMessage> trimmed_messages = manage_context(messages, opts.system_prompt);
+    if (trimmed_messages.size() != messages.size()) {
+        LOG_INFO("[LlamaCpp] Context managed: %zu -> %zu messages",
                  messages.size(), trimmed_messages.size());
     }
     
@@ -121,7 +131,9 @@ CompletionResult LlamaCppAI::chat(
         msgs.push_back(sys_msg);
     }
     
-    LOG_DEBUG("[LlamaCpp] === Messages being sent to AI ===");
+    LOG_DEBUG("[LlamaCpp] === ▶ IN  Messages being sent to AI ===");
+    LOG_DEBUG("[LlamaCpp] ▶ IN  Model: %s, Server: %s", model.c_str(), server_url_.c_str());
+
     for (size_t i = 0; i < trimmed_messages.size(); ++i) {
         const ConversationMessage& msg = trimmed_messages[i];
         
@@ -130,13 +142,17 @@ CompletionResult LlamaCppAI::chat(
         m["content"] = msg.content;
         msgs.push_back(m);
         
-        LOG_DEBUG("[LlamaCpp]   [%zu] %s (%zu chars): %.300s%s", 
-                  i, role_to_string(msg.role).c_str(), 
-                  msg.content.size(), msg.content.c_str(),
-                  msg.content.size() > 300 ? "..." : "");
     }
+
+    const ConversationMessage& last_msg = trimmed_messages.back();
+
+    LOG_DEBUG("[LlamaCpp]   ▶ %s (%zu chars): %.300s%s", 
+                role_to_string(last_msg.role).c_str(),
+                last_msg.content.size(), last_msg.content.c_str(),
+                last_msg.content.size() > 300 ? "..." : "");
+
     request["messages"] = msgs;
-    LOG_DEBUG("[LlamaCpp] === End of messages ===");
+    LOG_DEBUG("[LlamaCpp] === ▶ IN  End of messages (%zu total) ===", msgs.size());
     
     // Set parameters
     if (opts.temperature >= 0.0) {
@@ -153,7 +169,7 @@ CompletionResult LlamaCppAI::chat(
     
     std::string endpoint = server_url_ + "/v1/chat/completions";
     std::string request_body = request.dump();
-    LOG_DEBUG("[LlamaCpp] Sending request to %s (%zu bytes)", endpoint.c_str(), request_body.size());
+    LOG_DEBUG("[LlamaCpp] ▶ IN  Sending request to %s (%zu bytes)", endpoint.c_str(), request_body.size());
     
     // Prepare HTTP client
     HttpClient http;
@@ -172,7 +188,7 @@ CompletionResult LlamaCppAI::chat(
         return CompletionResult::fail("HTTP request failed: " + response.error);
     }
     
-    LOG_DEBUG("[LlamaCpp] Received response [HTTP %d] (%zu bytes)", 
+    LOG_DEBUG("[LlamaCpp] ◀ OUT Received response [HTTP %d] (%zu bytes)", 
               response.status_code, response.body.size());
     
     Json resp = response.json();
@@ -343,14 +359,14 @@ CompletionResult LlamaCppAI::chat(
         result.usage.total_tokens = usage.value("total_tokens", 0);
     }
     
-    LOG_DEBUG("[LlamaCpp] === AI Response ===");
-    LOG_DEBUG("[LlamaCpp] Model: %s, Stop reason: %s", result.model.c_str(), result.stop_reason.c_str());
-    LOG_DEBUG("[LlamaCpp] Tokens - Input: %d, Output: %d, Total: %d",
+    LOG_DEBUG("[LlamaCpp] === ◀ OUT AI Response ===");
+    LOG_DEBUG("[LlamaCpp] ◀ OUT Model: %s, Stop reason: %s", result.model.c_str(), result.stop_reason.c_str());
+    LOG_DEBUG("[LlamaCpp] ◀ OUT Tokens - Input: %d, Output: %d, Total: %d",
               result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens);
-    LOG_DEBUG("[LlamaCpp] Response content (%zu chars): %.500s%s", 
+    LOG_DEBUG("[LlamaCpp] ◀ OUT Content (%zu chars): %.500s%s", 
               result.content.size(), result.content.c_str(),
               result.content.size() > 500 ? "..." : "");
-    LOG_DEBUG("[LlamaCpp] === End AI Response ===");
+    LOG_DEBUG("[LlamaCpp] === ◀ OUT End AI Response ===");
     
     return result;
 }
@@ -367,69 +383,75 @@ size_t LlamaCppAI::estimate_request_chars(
     return total;
 }
 
-std::vector<ConversationMessage> LlamaCppAI::trim_messages_to_fit(
+std::vector<ConversationMessage> LlamaCppAI::manage_context(
     const std::vector<ConversationMessage>& messages,
-    const std::string& system_prompt) const
+    const std::string& system_prompt)
 {
-    size_t total_chars = estimate_request_chars(messages, system_prompt);
+    if (messages.empty()) {
+        return messages;
+    }
     
-    // Leave room for the response (reserve ~25% of context for output)
+    // Check if we need a resume cycle
+    if (context_manager_.needs_resume(messages, system_prompt)) {
+        ContextUsage usage = context_manager_.estimate_usage(messages, system_prompt);
+        LOG_WARN("[LlamaCpp] Context at %.0f%% capacity (%zu/%zu chars), initiating resume cycle",
+                 usage.usage_ratio * 100.0, usage.total_chars, usage.budget_chars);
+        
+        // Perform the resume cycle: generate summary, save memory, wipe, reload
+        std::vector<ConversationMessage> history_copy = messages;
+        bool ok = context_manager_.perform_resume_cycle(
+            this, history_copy, system_prompt);
+        
+        if (ok) {
+            LOG_INFO("[LlamaCpp] Resume cycle complete: %zu -> %zu messages",
+                     messages.size(), history_copy.size());
+            return history_copy;
+        }
+        
+        LOG_WARN("[LlamaCpp] Resume cycle failed, falling back to simple truncation");
+    }
+    
+    // If context fits or resume failed, check if simple truncation is needed
+    size_t total_chars = estimate_request_chars(messages, system_prompt);
     size_t budget = max_context_chars_ * 3 / 4;
     
     if (total_chars <= budget) {
         return messages; // Fits fine
     }
     
-    LOG_WARN("[LlamaCpp] Request too large (%zu chars) for context budget (%zu chars), trimming",
-             total_chars, budget);
+    // Fallback: truncate large individual messages
+    LOG_WARN("[LlamaCpp] Fallback truncation: %zu chars > %zu budget", total_chars, budget);
     
-    if (messages.empty()) {
-        return messages;
-    }
-    
-    // Strategy: keep the first message (usually the user's initial question context)
-    // and the most recent messages, dropping middle ones.
-    // Also truncate individual large tool_result messages.
-    
-    // First pass: truncate large individual messages in a copy
     std::vector<ConversationMessage> trimmed = messages;
-    const size_t max_single_msg = budget / 4; // No single message should use more than 25% of budget
+    const size_t max_single_msg = budget / 4;
     
     for (size_t i = 0; i < trimmed.size(); ++i) {
         if (trimmed[i].content.size() > max_single_msg) {
-            // Check if it's a tool result
             if (trimmed[i].content.find("[TOOL_RESULT") != std::string::npos) {
-                std::string truncated_content = trimmed[i].content.substr(0, max_single_msg);
-                truncated_content += "\n... [content truncated to fit context window] ...";
-                trimmed[i].content = truncated_content;
-                LOG_DEBUG("[LlamaCpp] Truncated large tool_result message %zu from %zu to %zu chars",
-                          i, messages[i].content.size(), trimmed[i].content.size());
+                trimmed[i].content = trimmed[i].content.substr(0, max_single_msg)
+                    + "\n... [content truncated to fit context window] ...";
             } else {
-                // Generic truncation
-                trimmed[i].content = trimmed[i].content.substr(0, max_single_msg) +
-                    "\n... [truncated] ...";
+                trimmed[i].content = trimmed[i].content.substr(0, max_single_msg)
+                    + "\n... [truncated] ...";
             }
         }
     }
     
-    // Re-estimate after individual truncation
     total_chars = estimate_request_chars(trimmed, system_prompt);
     if (total_chars <= budget) {
         return trimmed;
     }
     
-    // Second pass: drop middle messages, keeping first and last
+    // Last resort: drop middle messages
     std::vector<ConversationMessage> result;
     result.push_back(trimmed[0]);
     
-    // Add context truncation note as assistant message to maintain alternation
     if (trimmed[0].role == MessageRole::USER) {
         result.push_back(ConversationMessage::assistant(
             "[Earlier conversation truncated to fit context window.]"
         ));
     }
     
-    // Walk backwards from the end, adding messages until we hit the budget
     std::vector<ConversationMessage> tail;
     size_t used = estimate_request_chars(result, system_prompt);
     
@@ -444,17 +466,15 @@ std::vector<ConversationMessage> LlamaCppAI::trim_messages_to_fit(
         }
     }
     
-    // Reverse tail and append
     for (size_t i = tail.size(); i > 0; --i) {
-        // Ensure proper alternation
         if (!result.empty() && result.back().role == tail[i - 1].role) {
-            continue; // Skip to avoid consecutive same-role
+            continue;
         }
         result.push_back(tail[i - 1]);
     }
     
-    LOG_INFO("[LlamaCpp] Trimmed from %zu to %zu messages (est. %zu chars)",
-             messages.size(), result.size(), estimate_request_chars(result, system_prompt));
+    LOG_INFO("[LlamaCpp] Fallback trimmed from %zu to %zu messages",
+             messages.size(), result.size());
     
     return result;
 }

@@ -121,6 +121,7 @@ bool PluginLoader::load_impl(const std::string& path, LoadedPlugin& plugin) {
 }
 
 int PluginLoader::load_dir(const std::string& dir) {
+    LOG_DEBUG("[Loader] Scanning plugin directory: %s", dir.c_str());
     DIR* d = opendir(dir.c_str());
     if (!d) {
         return 0;
@@ -247,6 +248,9 @@ void PluginLoader::add_search_path(const std::string& path) {
 }
 
 std::string PluginLoader::find_plugin(const std::string& name) {
+    LOG_DEBUG("[Loader] Searching for plugin: %s (search paths: %zu)", 
+              name.c_str(), search_paths_.size());
+    
     // Try various name formats
     const std::vector<std::string> candidates = {
         name,
@@ -261,11 +265,13 @@ std::string PluginLoader::find_plugin(const std::string& name) {
         for (const auto& cand : candidates) {
             std::string path = base + "/" + cand;
             if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
+                LOG_DEBUG("[Loader] Found plugin at: %s", path.c_str());
                 return path;
             }
         }
     }
     
+    LOG_DEBUG("[Loader] Plugin not found: %s", name.c_str());
     return "";
 }
 

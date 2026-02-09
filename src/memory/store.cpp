@@ -108,6 +108,46 @@ bool MemoryStore::ensure_schema() {
     if (!exec("CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_at)")) return false;
     if (!exec("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed)")) return false;
     
+    // Memories table - structured memory storage
+    if (!exec(
+        "CREATE TABLE IF NOT EXISTS memories ("
+        "  id TEXT PRIMARY KEY,"
+        "  content TEXT NOT NULL,"
+        "  category TEXT DEFAULT 'general',"
+        "  session_key TEXT,"
+        "  tags TEXT,"
+        "  created_at INTEGER,"
+        "  updated_at INTEGER,"
+        "  expires_at INTEGER DEFAULT 0,"
+        "  importance INTEGER DEFAULT 5"
+        ")"
+    )) return false;
+    
+    if (!exec("CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)")) return false;
+    if (!exec("CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC)")) return false;
+    if (!exec("CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC)")) return false;
+    
+    // FTS for memories
+    {
+        std::string fts_error;
+        if (!exec(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5("
+            "  memory_id,"
+            "  content,"
+            "  category,"
+            "  tags"
+            ")", fts_error)) {
+            // Try FTS4 fallback
+            exec(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts4("
+                "  memory_id,"
+                "  content,"
+                "  category,"
+                "  tags"
+                ")", fts_error);
+        }
+    }
+    
     // Try to create FTS5 table for full-text search
     fts_available_ = ensure_fts_table();
     
@@ -711,6 +751,303 @@ bool MemoryStore::complete_task(const std::string& id) {
     sqlite3_finalize(stmt);
     
     return rc == SQLITE_DONE;
+}
+
+// Memory entry operations
+
+bool MemoryStore::upsert_memory(const MemoryEntry& entry) {
+    if (!db_) {
+        set_error("Database not open");
+        return false;
+    }
+    
+    const char* sql = 
+        "INSERT OR REPLACE INTO memories (id, content, category, session_key, tags, "
+        "created_at, updated_at, expires_at, importance) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        set_error_from_db();
+        return false;
+    }
+    
+    sqlite3_bind_text(stmt, 1, entry.id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, entry.content.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, entry.category.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, entry.session_key.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, entry.tags.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 6, entry.created_at);
+    sqlite3_bind_int64(stmt, 7, entry.updated_at);
+    sqlite3_bind_int64(stmt, 8, entry.expires_at);
+    sqlite3_bind_int(stmt, 9, entry.importance);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        set_error_from_db();
+        return false;
+    }
+    
+    // Sync to FTS
+    {
+        const char* del_sql = "DELETE FROM memories_fts WHERE memory_id = ?";
+        sqlite3_stmt* del_stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, del_sql, -1, &del_stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(del_stmt, 1, entry.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(del_stmt);
+            sqlite3_finalize(del_stmt);
+        }
+        
+        const char* ins_sql = "INSERT INTO memories_fts (memory_id, content, category, tags) VALUES (?, ?, ?, ?)";
+        sqlite3_stmt* ins_stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, ins_sql, -1, &ins_stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(ins_stmt, 1, entry.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(ins_stmt, 2, entry.content.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(ins_stmt, 3, entry.category.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(ins_stmt, 4, entry.tags.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(ins_stmt);
+            sqlite3_finalize(ins_stmt);
+        }
+    }
+    
+    return true;
+}
+
+bool MemoryStore::delete_memory(const std::string& id) {
+    if (!db_) return false;
+    
+    // Delete from FTS
+    {
+        const char* fts_sql = "DELETE FROM memories_fts WHERE memory_id = ?";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, fts_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+    
+    const char* sql = "DELETE FROM memories WHERE id = ?";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return false;
+    
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    return rc == SQLITE_DONE;
+}
+
+bool MemoryStore::get_memory(const std::string& id, MemoryEntry& out) {
+    if (!db_) return false;
+    
+    const char* sql = "SELECT id, content, category, session_key, tags, "
+                      "created_at, updated_at, expires_at, importance "
+                      "FROM memories WHERE id = ?";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return false;
+    
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        out.id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        out.content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const char* cat = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        out.category = cat ? cat : "general";
+        const char* sk = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        out.session_key = sk ? sk : "";
+        const char* tags = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        out.tags = tags ? tags : "";
+        out.created_at = sqlite3_column_int64(stmt, 5);
+        out.updated_at = sqlite3_column_int64(stmt, 6);
+        out.expires_at = sqlite3_column_int64(stmt, 7);
+        out.importance = sqlite3_column_int(stmt, 8);
+        sqlite3_finalize(stmt);
+        return true;
+    }
+    
+    sqlite3_finalize(stmt);
+    return false;
+}
+
+std::vector<MemoryEntry> MemoryStore::list_memories(const std::string& category, int limit) {
+    std::vector<MemoryEntry> result;
+    if (!db_) return result;
+    
+    std::string sql = "SELECT id, content, category, session_key, tags, "
+                      "created_at, updated_at, expires_at, importance "
+                      "FROM memories";
+    if (!category.empty()) {
+        sql += " WHERE category = ?";
+    }
+    sql += " ORDER BY importance DESC, updated_at DESC LIMIT ?";
+    
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return result;
+    
+    int bind_idx = 1;
+    if (!category.empty()) {
+        sqlite3_bind_text(stmt, bind_idx++, category.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    sqlite3_bind_int(stmt, bind_idx, limit);
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        MemoryEntry e;
+        e.id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        e.content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const char* cat = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        e.category = cat ? cat : "general";
+        const char* sk = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        e.session_key = sk ? sk : "";
+        const char* tags = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        e.tags = tags ? tags : "";
+        e.created_at = sqlite3_column_int64(stmt, 5);
+        e.updated_at = sqlite3_column_int64(stmt, 6);
+        e.expires_at = sqlite3_column_int64(stmt, 7);
+        e.importance = sqlite3_column_int(stmt, 8);
+        result.push_back(e);
+    }
+    
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+std::vector<MemoryEntry> MemoryStore::search_memories(const std::string& query, int limit) {
+    std::vector<MemoryEntry> result;
+    if (!db_ || query.empty()) return result;
+    
+    // Try FTS search first
+    const char* fts_sql = 
+        "SELECT m.id, m.content, m.category, m.session_key, m.tags, "
+        "m.created_at, m.updated_at, m.expires_at, m.importance "
+        "FROM memories m "
+        "JOIN memories_fts f ON m.id = f.memory_id "
+        "WHERE memories_fts MATCH ? "
+        "ORDER BY m.importance DESC "
+        "LIMIT ?";
+    
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, fts_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 2, limit);
+        
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            MemoryEntry e;
+            e.id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            e.content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            const char* cat = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+            e.category = cat ? cat : "general";
+            const char* sk = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+            e.session_key = sk ? sk : "";
+            const char* tags = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+            e.tags = tags ? tags : "";
+            e.created_at = sqlite3_column_int64(stmt, 5);
+            e.updated_at = sqlite3_column_int64(stmt, 6);
+            e.expires_at = sqlite3_column_int64(stmt, 7);
+            e.importance = sqlite3_column_int(stmt, 8);
+            result.push_back(e);
+        }
+        sqlite3_finalize(stmt);
+        
+        if (!result.empty()) return result;
+    } else if (stmt) {
+        sqlite3_finalize(stmt);
+    }
+    
+    // Fallback: LIKE search
+    const char* like_sql = 
+        "SELECT id, content, category, session_key, tags, "
+        "created_at, updated_at, expires_at, importance "
+        "FROM memories WHERE content LIKE ? OR tags LIKE ? "
+        "ORDER BY importance DESC, updated_at DESC LIMIT ?";
+    
+    stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, like_sql, -1, &stmt, nullptr) != SQLITE_OK) return result;
+    
+    std::string like_query = "%" + query + "%";
+    sqlite3_bind_text(stmt, 1, like_query.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, like_query.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, limit);
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        MemoryEntry e;
+        e.id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        e.content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const char* cat = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        e.category = cat ? cat : "general";
+        const char* sk = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        e.session_key = sk ? sk : "";
+        const char* tags = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        e.tags = tags ? tags : "";
+        e.created_at = sqlite3_column_int64(stmt, 5);
+        e.updated_at = sqlite3_column_int64(stmt, 6);
+        e.expires_at = sqlite3_column_int64(stmt, 7);
+        e.importance = sqlite3_column_int(stmt, 8);
+        result.push_back(e);
+    }
+    
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+bool MemoryStore::cleanup_expired_memories() {
+    if (!db_) return false;
+    
+    int64_t now = static_cast<int64_t>(time(nullptr)) * 1000;
+    
+    // Delete expired FTS entries first
+    {
+        const char* fts_sql = 
+            "DELETE FROM memories_fts WHERE memory_id IN "
+            "(SELECT id FROM memories WHERE expires_at > 0 AND expires_at <= ?)";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, fts_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int64(stmt, 1, now);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+    
+    const char* sql = "DELETE FROM memories WHERE expires_at > 0 AND expires_at <= ?";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return false;
+    
+    sqlite3_bind_int64(stmt, 1, now);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    return rc == SQLITE_DONE;
+}
+
+int MemoryStore::count_memories(const std::string& category) {
+    if (!db_) return 0;
+    
+    std::string sql = "SELECT COUNT(*) FROM memories";
+    if (!category.empty()) {
+        sql += " WHERE category = ?";
+    }
+    
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return 0;
+    
+    if (!category.empty()) {
+        sqlite3_bind_text(stmt, 1, category.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    
+    int count = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        count = sqlite3_column_int(stmt, 0);
+    }
+    
+    sqlite3_finalize(stmt);
+    return count;
 }
 
 // Meta operations

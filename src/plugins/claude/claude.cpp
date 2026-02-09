@@ -110,7 +110,8 @@ CompletionResult ClaudeAI::chat(
     }
     
     Json msgs = Json::array();
-    LOG_DEBUG("[Claude] === Messages being sent to AI ===");
+    LOG_DEBUG("[Claude] === ▶ IN  Messages being sent to AI ===");
+    LOG_DEBUG("[Claude] ▶ IN  Model: %s, Max tokens: %d", model.c_str(), max_tokens);
     for (size_t i = 0; i < messages.size(); ++i) {
         const ConversationMessage& msg = messages[i];
         
@@ -129,20 +130,20 @@ CompletionResult ClaudeAI::chat(
         m["content"] = msg.content;
         msgs.push_back(m);
         
-        LOG_DEBUG("[Claude]   [%zu] %s (%zu chars): %.300s%s", 
+        LOG_DEBUG("[Claude]   ▶ [%zu] %s (%zu chars): %.300s%s", 
                   i, role_to_string(msg.role).c_str(), 
                   msg.content.size(), msg.content.c_str(),
                   msg.content.size() > 300 ? "..." : "");
     }
     request["messages"] = msgs;
-    LOG_DEBUG("[Claude] === End of messages ===");
+    LOG_DEBUG("[Claude] === ▶ IN  End of messages (%zu total) ===", msgs.size());
     
     if (opts.stream && opts.on_chunk) {
         request["stream"] = true;
     }
     
     std::string request_body = request.dump();
-    LOG_DEBUG("[Claude] Sending request to API (%zu bytes)", request_body.size());
+    LOG_DEBUG("[Claude] ▶ IN  Sending request to API (%zu bytes)", request_body.size());
     
     HttpClient http;
     std::map<std::string, std::string> headers;
@@ -157,7 +158,7 @@ CompletionResult ClaudeAI::chat(
         return CompletionResult::fail("HTTP request failed: " + response.body);
     }
     
-    LOG_DEBUG("[Claude] Received response [HTTP %d] (%zu bytes)", 
+    LOG_DEBUG("[Claude] ◀ OUT Received response [HTTP %d] (%zu bytes)", 
               response.status_code, response.body.size());
     
     Json resp = response.json();
@@ -204,14 +205,14 @@ CompletionResult ClaudeAI::chat(
         result.usage.total_tokens = result.usage.input_tokens + result.usage.output_tokens;
     }
     
-    LOG_DEBUG("[Claude] === AI Response ===");
-    LOG_DEBUG("[Claude] Model: %s, Stop reason: %s", result.model.c_str(), result.stop_reason.c_str());
-    LOG_DEBUG("[Claude] Tokens - Input: %d, Output: %d, Total: %d",
+    LOG_DEBUG("[Claude] === ◀ OUT AI Response ===");
+    LOG_DEBUG("[Claude] ◀ OUT Model: %s, Stop reason: %s", result.model.c_str(), result.stop_reason.c_str());
+    LOG_DEBUG("[Claude] ◀ OUT Tokens - Input: %d, Output: %d, Total: %d",
               result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens);
-    LOG_DEBUG("[Claude] Response content (%zu chars): %.500s%s", 
+    LOG_DEBUG("[Claude] ◀ OUT Content (%zu chars): %.500s%s", 
               result.content.size(), result.content.c_str(),
               result.content.size() > 500 ? "..." : "");
-    LOG_DEBUG("[Claude] === End AI Response ===");
+    LOG_DEBUG("[Claude] === ◀ OUT End AI Response ===");
     
     return result;
 }

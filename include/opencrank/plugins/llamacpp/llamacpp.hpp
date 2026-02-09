@@ -14,6 +14,7 @@
 
 #include <opencrank/ai/ai.hpp>
 #include <opencrank/core/http_client.hpp>
+#include <opencrank/core/context_manager.hpp>
 #include <opencrank/core/logger.hpp>
 #include <opencrank/core/config.hpp>
 #include <sstream>
@@ -61,21 +62,29 @@ public:
         const std::string& system = ""
     );
 
+    // Access the context manager for external configuration
+    ContextManager& context_manager() { return context_manager_; }
+    const ContextManager& context_manager() const { return context_manager_; }
+
 private:
     std::string server_url_;
     std::string api_key_;
     std::string default_model_;
     size_t max_context_chars_;   // Approx char limit for context (chars ≈ tokens * 4)
     bool initialized_;
+    ContextManager context_manager_;
     
     // Estimate total character count of a request to proactively avoid context overflow
     size_t estimate_request_chars(const std::vector<ConversationMessage>& messages,
                                   const std::string& system_prompt) const;
     
-    // Trim oldest non-system messages to fit within context budget
-    std::vector<ConversationMessage> trim_messages_to_fit(
+    // Manage context window intelligently using resume-based strategy.
+    // If context is within budget, returns messages unchanged.
+    // If context exceeds threshold, performs a resume cycle: generates a summary,
+    // saves to memory, wipes history, and returns fresh context with resume.
+    std::vector<ConversationMessage> manage_context(
         const std::vector<ConversationMessage>& messages,
-        const std::string& system_prompt) const;
+        const std::string& system_prompt);
 };
 
 } // namespace opencrank

@@ -61,7 +61,7 @@ public:
         Config()
             : hang_timeout_seconds(60)
             , typing_interval_seconds(5)
-            , check_interval_ms(1000)
+            , check_interval_ms(5000)
         {}
     };
     

@@ -4,7 +4,7 @@
 # Compiler and flags - Override to use C++17 for Crow
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -I../../../include -I.
-CXXFLAGS_PIC = $(CXXFLAGS) -fPIC -fvisibility=hidden
+CXXFLAGS_PIC = $(CXXFLAGS) -fPIC
 LDFLAGS = -lpthread -lsqlite3 -lssl -lcrypto -lcurl -ldl
 LDFLAGS_PLUGIN = -shared
 

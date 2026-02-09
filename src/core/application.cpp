@@ -210,6 +210,34 @@ void Application::setup_skills() {
 void Application::setup_agent() {
     LOG_INFO("Initializing agent tools...");
     
+    // Load agent configuration from config file
+    AgentConfig agent_config;
+    agent_config.max_iterations = static_cast<int>(
+        config_.get_int("agent.max_iterations", 15));
+    agent_config.max_consecutive_errors = static_cast<int>(
+        config_.get_int("agent.max_consecutive_errors", 5));
+    agent_config.max_tool_result_size = static_cast<size_t>(
+        config_.get_int("agent.max_tool_result_size", 15000));
+    agent_config.auto_chunk_large_results = 
+        config_.get_bool("agent.auto_chunk_large_results", true);
+    agent_config.chunk_size = static_cast<size_t>(
+        config_.get_int("agent.chunk_size", 0));
+    
+    // Try to get context_size from AI provider configs (llamacpp or claude)
+    int64_t ctx = config_.get_int("llamacpp.context_size", 0);
+    if (ctx == 0) {
+        ctx = config_.get_int("claude.context_size", 0);
+    }
+    agent_config.context_size = static_cast<size_t>(ctx);
+    
+    agent_.set_config(agent_config);
+    
+    LOG_INFO("Agent config: max_iterations=%d, max_consecutive_errors=%d, "
+             "max_tool_result_size=%zu, chunk_size=%zu (effective=%zu), context_size=%zu tokens",
+             agent_config.max_iterations, agent_config.max_consecutive_errors,
+             agent_config.max_tool_result_size, agent_config.chunk_size,
+             agent_config.effective_chunk_size(), agent_config.context_size);
+    
     // Built-in tools are now registered via BuiltinToolsProvider
     // which will be initialized along with other plugins in setup_plugins()
     
@@ -366,7 +394,7 @@ bool Application::init(int argc, char* argv[]) {
     AIProcessMonitor::Config monitor_config;
     monitor_config.hang_timeout_seconds = config_.get_int("ai_monitor.hang_timeout", 30);
     monitor_config.typing_interval_seconds = config_.get_int("ai_monitor.typing_interval", 3);
-    monitor_config.check_interval_ms = config_.get_int("ai_monitor.check_interval_ms", 1000);
+    monitor_config.check_interval_ms = config_.get_int("ai_monitor.check_interval_ms", 5000);
     ai_monitor_.set_config(monitor_config);
     
     // Set hung session callback
@@ -414,7 +442,9 @@ void Application::rebuild_system_prompt() {
 }
 
 int Application::run() {
-    LOG_INFO("Entering main loop");
+    LOG_INFO("Entering main loop (poll interval: 100ms)");
+    LOG_DEBUG("[App] Active channels: %zu, Active plugins: %zu, Agent tools: %zu",
+              registry().channels().size(), registry().plugins().size(), agent_.tools().size());
     
     while (running_.load()) {
         // Poll all plugins
@@ -438,9 +468,12 @@ void Application::shutdown() {
     
     // Stop AI monitor first
     ai_monitor_.stop();
+    LOG_DEBUG("[App] AI monitor stopped");
     
     // Stop thread pool (wait for pending)
+    LOG_DEBUG("[App] Stopping thread pool (pending: %zu)", thread_pool_.pending());
     thread_pool_.shutdown();
+    LOG_DEBUG("[App] Thread pool stopped");
     
     registry().stop_all_channels();
     registry().shutdown_all();

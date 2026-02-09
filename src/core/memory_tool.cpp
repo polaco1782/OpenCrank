@@ -54,6 +54,9 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         tool.params.push_back(ToolParamSchema("filename", "string", "Optional filename (default: MEMORY.md)", false));
         tool.params.push_back(ToolParamSchema("daily", "boolean", "If true, save to daily memory file (memory/YYYY-MM-DD.md)", false));
         tool.params.push_back(ToolParamSchema("append", "boolean", "If true, append to existing file instead of overwriting", false));
+        tool.params.push_back(ToolParamSchema("category", "string", "Category: general, resume, fact, preference (default: general)", false));
+        tool.params.push_back(ToolParamSchema("importance", "number", "Importance 1-10 (default: 5)", false));
+        tool.params.push_back(ToolParamSchema("tags", "string", "Comma-separated tags for search", false));
         
         tool.execute = [self](const Json& params) -> AgentToolResult {
             ToolResult result = self->execute("memory_save", params);
@@ -255,6 +258,24 @@ Json MemoryTool::get_tool_schema() const {
             append["type"] = "boolean";
             append["description"] = "If true, append to existing file instead of overwriting";
             props["append"] = append;
+        }
+        {
+            Json cat;
+            cat["type"] = "string";
+            cat["description"] = "Category: general, resume, fact, preference (default: general)";
+            props["category"] = cat;
+        }
+        {
+            Json imp;
+            imp["type"] = "integer";
+            imp["description"] = "Importance 1-10 (default: 5)";
+            props["importance"] = imp;
+        }
+        {
+            Json tg;
+            tg["type"] = "string";
+            tg["description"] = "Comma-separated tags for search";
+            props["tags"] = tg;
         }
         
         params["properties"] = props;
@@ -492,18 +513,25 @@ Json MemoryTool::memory_save(const Json& params) {
     bool daily = params.value("daily", false);
     bool append = params.value("append", false);
     std::string filename = params.value("filename", std::string(""));
+    std::string category = params.value("category", std::string("general"));
+    int importance = params.value("importance", 5);
+    std::string tags = params.value("tags", std::string(""));
     
-    bool ok;
+    // Always save to structured SQLite database
+    bool db_ok = manager_->save_structured_memory(content, category, tags, importance);
+    
+    // Also save to file for backward compatibility
+    bool file_ok;
     if (daily) {
-        ok = manager_->save_daily_memory(content);
+        file_ok = manager_->save_daily_memory(content);
     } else if (append) {
         std::string target = filename.empty() ? "MEMORY.md" : filename;
-        ok = manager_->append_to_memory(content, target);
+        file_ok = manager_->append_to_memory(content, target);
     } else {
-        ok = manager_->save_memory(content, filename);
+        file_ok = manager_->save_memory(content, filename);
     }
     
-    if (ok) {
+    if (db_ok || file_ok) {
         return make_success("Memory saved successfully");
     } else {
         return make_error("Failed to save memory: " + manager_->last_error());
@@ -516,10 +544,16 @@ Json MemoryTool::memory_search(const Json& params) {
         return make_error("Query is required");
     }
     
-    MemorySearchConfig config;
-    config.max_results = params.value("max_results", 10);
+    int max_results = params.value("max_results", 10);
     
+    MemorySearchConfig config;
+    config.max_results = max_results;
+    
+    // Search file-based chunks
     std::vector<MemorySearchResult> results = manager_->search(query, config);
+    
+    // Also search structured memories from SQLite
+    std::vector<MemoryEntry> db_memories = manager_->search_structured_memories(query, max_results);
     
     Json response;
     response["success"] = true;
@@ -537,8 +571,22 @@ Json MemoryTool::memory_search(const Json& params) {
         items.push_back(item);
     }
     
+    // Add structured memories
+    Json db_items = Json::array();
+    for (const auto& m : db_memories) {
+        Json item;
+        item["id"] = m.id;
+        item["content"] = m.content;
+        item["category"] = m.category;
+        item["tags"] = m.tags;
+        item["importance"] = m.importance;
+        item["source"] = "database";
+        db_items.push_back(item);
+    }
+    
     response["results"] = items;
-    response["count"] = static_cast<int>(results.size());
+    response["memories"] = db_items;
+    response["count"] = static_cast<int>(results.size() + db_memories.size());
     
     return response;
 }

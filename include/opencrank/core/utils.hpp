@@ -129,6 +129,16 @@ bool mkdir_p(const std::string& path);
 // Shorten path by replacing home with ~
 std::string shorten_home_path(const std::string& path);
 
+// ============ HTML utilities ============
+
+// Strip HTML tags for AI consumption.
+// Removes script/style blocks, decodes common entities, normalizes whitespace.
+// Preserves <a> and <img> tags (with their attributes) for link/image context.
+std::string strip_html_for_ai(const std::string& html);
+
+// Normalize whitespace: collapse runs of whitespace to single space, trim.
+std::string normalize_whitespace(const std::string& s);
+
 // ============ UUID utilities ============
 
 // Generate a random UUID v4

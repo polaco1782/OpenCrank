@@ -342,16 +342,14 @@ std::string Agent::build_tools_prompt() const {
     oss << "2. You can call multiple tools by emitting multiple JSON objects\n";
     oss << "3. You can explain AFTER the tool call(s), never before\n\n";
 
-    oss << "### Large Content Handling\n";
-    oss << "When a tool returns content too large to fit in context, it will be automatically chunked.\n";
-    oss << "You'll see a message like 'Stored as chunk_N with X chunks'. To access this content:\n";
-    oss << "- Use 'content_chunk' with id and chunk number (0-based) to retrieve specific chunks\n";
-    oss << "- Use 'content_search' with id and query to search within the content\n";
-    oss << "This allows you to work with large web pages, files, or command outputs.\n\n";
-
     oss << "### Web Fetching\n";
     oss << "When you need to fetch or read web content, use 'browser_extract_text' for readable text,\n";
     oss << "'browser_fetch' for raw HTML, and 'browser_get_links' for links.\n\n";
+
+    oss << "### Large Content Handling\n";
+    oss << "When a tool returns content too large to fit in context, it will be automatically chunked.\n";
+    oss << "You'll see a message like 'Stored as chunk_N with X chunks'. Refer to the chunking tools to work with this content.\n";
+    oss << "This allows you to work/filter/scan large web pages, files, or command outputs.\n\n";
 
     oss << "### Tools:\n\n";
     
@@ -624,8 +622,7 @@ std::string Agent::format_tool_result(const std::string& tool_name, const AgentT
             }
             
             oss << "\n\n=== To access full content ===\n";
-            oss << "Use 'content_chunk' tool with id=\"" << chunk_id << "\" and chunk=0 to get first chunk.\n";
-            oss << "Use 'content_search' tool with id=\"" << chunk_id << "\" and query=\"your search\" to find specific content.\n";
+            oss << "Follow the instructions for working with chunked content in the tools documentation.\n";
             oss << "Total chunks available: " << total_chunks;
         } else {
             oss << result.output;

@@ -65,6 +65,14 @@ HttpResponse HttpClient::post_form(const std::string& url,
     return perform_request("POST", url, body, headers, "");
 }
 
+HttpResponse HttpClient::request(const std::string& method,
+                                 const std::string& url,
+                                 const std::string& body,
+                                 const std::map<std::string, std::string>& headers,
+                                 const std::string& proxy) {
+    return perform_request(method, url, body, headers, proxy);
+}
+
 size_t HttpClient::write_callback(char* ptr, size_t size, size_t nmemb, void* userdata) {
     size_t total = size * nmemb;
     std::string* response_body = static_cast<std::string*>(userdata);
@@ -169,6 +177,8 @@ HttpResponse HttpClient::perform_request(const std::string& method,
         curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "DELETE");
     } else if (method == "PATCH") {
         curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "PATCH");
+    } else if (method == "HEAD") {
+        curl_easy_setopt(curl_, CURLOPT_NOBODY, 1L);
     }
     // GET is the default
     

@@ -125,7 +125,7 @@ struct AgentConfig {
     size_t context_size;            // Context size in tokens from the AI model (0 = use defaults)
     
     AgentConfig() 
-        : max_iterations(15)
+        : max_iterations(30)
         , max_consecutive_errors(5)
         , echo_tool_calls(false)
         , verbose_results(false)

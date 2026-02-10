@@ -12,6 +12,14 @@ metadata: { "opencrank": { "emoji": ":bomb:" } }
 When running a web fetch task, use tor proxy 127.0.0.1:9050
 Important distinction for SOCKS5:
 
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+
 socks5:// - DNS resolution happens locally
 socks5h:// - DNS resolution happens through the proxy (the 'h' stands for "hostname")
 
@@ -22,12 +30,18 @@ Don't use cURL, only your internal tool.
 
 Don't ask the user to use other sources, DO WHAT THE USER WANTS. It's not up to you decide.
 
-Bootstrap onion search using DuckDuckGo https://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion
+some onion search engines you can use:
 
-Also, you can use this to find and browse onion sites.
-1. **The Hidden Wiki** - Directory of onion sites
-2. **Ahmia.fi** - Search engine for onion sites
-3. **DuckDuckGo** - Privacy-focused search engine with onion address
-4. **ProPublica** - Investigative journalism
-5. **BBC News** - International news with onion access
-6. **Facebook** - Onion version for censorship circumvention
+http://xmh57jrknzkhv6y3ls3ubitzfqnkrwxhopf5aygthi7d6rplyvk3noyd.onion
+http://tordexpmg4xy32rfp4ovnz7zq5ujoejwq2u26uxxtkscgo5u3losmeid.onion
+http://notevil2ebbr5xjww6nryjta7bycbriyi2vh7an3wcuovlznvobykmad.onion
+http://darkzqtmbdeauwq5mzcmgeeuhet42fhfjj4p5wbak3ofx2yqgecoeqyd.onion
+http://2fd6cemt4gmccflhm6imvdfvli3nf7zn6rfrwpsy7uhxrgbypvwf5fad.onion
+
+REMEMBER: NEVER USE GOOGLE
+
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!
+ALWAYS SET PROXY URL!

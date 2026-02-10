@@ -36,13 +36,17 @@ public:
     std::string store(const std::string& content, const std::string& source, size_t chunk_size = 0);
     
     // Get a specific chunk (0-indexed)
-    std::string get_chunk(const std::string& id, size_t chunk_index) const;
+    std::string get_chunk(const std::string& id, size_t chunk_index, bool clean_html = false) const;
     
     // Get summary info about stored content
     std::string get_info(const std::string& id) const;
     
-    // Search within stored content
-    std::string search(const std::string& id, const std::string& query, size_t context_chars = 500) const;
+    // Search within stored content and return chunk IDs where matches are found
+    // use_regex: if true, query is treated as a regex pattern
+    std::string search_with_chunks(const std::string& id, const std::string& query, size_t context_chars = 300, bool use_regex = false) const;
+    
+    // Search across all stored chunks and return results grouped by content ID
+    std::string search_all_chunks(const std::string& query, size_t context_chars = 300, bool use_regex = false) const;
     
     // Check if content exists
     bool has(const std::string& id) const;

@@ -484,4 +484,128 @@ std::string md5_hex(const std::string& data) {
     return oss.str();
 }
 
+// ============ HTML utilities ============
+
+std::string strip_html_for_ai(const std::string& html) {
+    std::string result;
+    result.reserve(html.size());
+
+    bool in_tag = false;
+    bool in_script = false;
+    bool in_style = false;
+    bool keep_tag = false;
+    std::string tag_buffer;
+
+    for (size_t i = 0; i < html.size(); ++i) {
+        char c = html[i];
+
+        if (c == '<') {
+            in_tag = true;
+            tag_buffer = "<";
+
+            // Peek ahead to identify the tag name
+            std::string peek;
+            for (size_t j = i + 1; j < html.size() && j < i + 12; ++j) {
+                if (html[j] == ' ' || html[j] == '>' || html[j] == '\t' || html[j] == '\n') break;
+                peek += static_cast<char>(tolower(html[j]));
+            }
+
+            // Track script/style blocks
+            if (peek == "script" || peek.find("script") == 0) {
+                in_script = true;
+            } else if (peek == "/script") {
+                in_script = false;
+            } else if (peek == "style" || peek.find("style") == 0) {
+                in_style = true;
+            } else if (peek == "/style") {
+                in_style = false;
+            }
+
+            // Preserve <a> and <img> tags
+            keep_tag = (peek == "a" || peek == "img" || peek == "/a" || peek == "/img");
+
+        } else if (c == '>' && in_tag) {
+            tag_buffer += c;
+            in_tag = false;
+
+            if (keep_tag && !in_script && !in_style) {
+                result += tag_buffer;
+            } else if (!in_script && !in_style) {
+                // Replace block-level tag boundaries with newlines for readability
+                result += ' ';
+            }
+
+            tag_buffer.clear();
+            keep_tag = false;
+
+        } else if (in_tag) {
+            tag_buffer += c;
+
+        } else if (!in_script && !in_style) {
+            // Decode common HTML entities
+            if (c == '&' && i + 1 < html.size()) {
+                std::string entity;
+                size_t j = i + 1;
+                while (j < html.size() && j < i + 10 && html[j] != ';' && html[j] != ' ') {
+                    entity += html[j];
+                    ++j;
+                }
+
+                if (j < html.size() && html[j] == ';') {
+                    std::string decoded;
+                    if (entity == "nbsp" || entity == "#160") decoded = " ";
+                    else if (entity == "amp" || entity == "#38") decoded = "&";
+                    else if (entity == "lt" || entity == "#60") decoded = "<";
+                    else if (entity == "gt" || entity == "#62") decoded = ">";
+                    else if (entity == "quot" || entity == "#34") decoded = "\"";
+                    else if (entity == "apos" || entity == "#39") decoded = "'";
+                    else if (entity == "mdash" || entity == "#8212") decoded = "--";
+                    else if (entity == "ndash" || entity == "#8211") decoded = "-";
+                    else if (entity == "hellip" || entity == "#8230") decoded = "...";
+                    else if (entity == "laquo" || entity == "#171") decoded = "<<";
+                    else if (entity == "raquo" || entity == "#187") decoded = ">>";
+
+                    if (!decoded.empty()) {
+                        result += decoded;
+                        i = j;
+                        continue;
+                    }
+                }
+            }
+            result += c;
+        }
+    }
+
+    return normalize_whitespace(result);
+}
+
+std::string normalize_whitespace(const std::string& s) {
+    std::string result;
+    result.reserve(s.size());
+
+    bool last_was_space = true;  // Start true to trim leading
+
+    for (size_t i = 0; i < s.size(); ++i) {
+        char c = s[i];
+        bool is_space = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+
+        if (is_space) {
+            if (!last_was_space) {
+                result += ' ';
+                last_was_space = true;
+            }
+        } else {
+            result += c;
+            last_was_space = false;
+        }
+    }
+
+    // Trim trailing
+    if (!result.empty() && result.back() == ' ') {
+        result.pop_back();
+    }
+
+    return result;
+}
+
 } // namespace opencrank

@@ -2,7 +2,6 @@
  * OpenCrank C++11 - Built-in Tools Provider Implementation
  * 
  * BuiltinToolsProvider class: filesystem and shell tools for the agent.
- * Legacy factory functions are in builtin_tools_legacy.cpp.
  */
 #include <opencrank/core/builtin_tools.hpp>
 #include <opencrank/core/logger.hpp>
@@ -27,6 +26,40 @@
 #endif
 
 namespace opencrank {
+
+// ============================================================================
+// Path Utilities
+// ============================================================================
+
+namespace builtin_tools {
+namespace path {
+
+std::string resolve(const std::string& path, const std::string& workspace) {
+    if (path.empty()) return workspace;
+    
+    // Absolute path
+    if (path[0] == '/' || (path.size() > 1 && path[1] == ':')) {
+        return path;
+    }
+    
+    // Relative path
+    if (workspace.empty() || workspace == ".") {
+        return path;
+    }
+    
+    return workspace + "/" + path;
+}
+
+bool is_within_workspace(const std::string& path, const std::string& /*workspace*/) {
+    // Prevent directory traversal
+    if (path.find("..") != std::string::npos) {
+        return false;
+    }
+    return true;
+}
+
+} // namespace path
+} // namespace builtin_tools
 
 // ============================================================================
 // BuiltinToolsProvider Implementation
@@ -187,8 +220,9 @@ std::vector<AgentTool> BuiltinToolsProvider::get_agent_tools() const {
     {
         AgentTool tool;
         tool.name = "content_chunk";
-        tool.description = "Retrieve a specific chunk of large content that was stored due to size limits. "
-                           "Use this when tool results indicate content was chunked.";
+        tool.description = "This loads a part of chunk of large content that was stored in memory due to size limits. "
+                           "Before using this, use 'content_search' to find which chunks contain the information you need, then load specific chunks with this tool.";
+
         tool.params.push_back(ToolParamSchema(
             "id", "string", 
             "The content ID (e.g., 'chunk_1')", 
@@ -198,6 +232,11 @@ std::vector<AgentTool> BuiltinToolsProvider::get_agent_tools() const {
             "chunk", "number", 
             "Chunk index (0-based)", 
             true
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "clean_html", "boolean", 
+            "Strip HTML tags except links and images (default: false)", 
+            false
         ));
         
         tool.execute = [self](const Json& params) -> AgentToolResult {
@@ -211,21 +250,27 @@ std::vector<AgentTool> BuiltinToolsProvider::get_agent_tools() const {
     {
         AgentTool tool;
         tool.name = "content_search";
-        tool.description = "Search for text within large stored content. Returns matching excerpts with context. "
-                           "Use this to find specific information without reading all chunks.";
+        tool.description = "Search for text within large stored content. Returns chunk IDs where matches were found "
+                           "along with excerpts. Use this to find which chunks contain specific information, then load those chunks. "
+                           "Supports regex patterns for advanced searches. If 'id' is omitted, searches across ALL stored chunks.";
         tool.params.push_back(ToolParamSchema(
             "id", "string", 
-            "The content ID (e.g., 'chunk_1')", 
-            true
+            "The content ID (e.g., 'chunk_1'). If omitted, searches all stored chunks.", 
+            false
         ));
         tool.params.push_back(ToolParamSchema(
             "query", "string", 
-            "Text to search for (case-insensitive)", 
+            "Text or regex pattern to search for (case-insensitive)", 
             true
         ));
         tool.params.push_back(ToolParamSchema(
             "context", "number", 
-            "Characters of context around each match (default: 500)", 
+            "Characters of context around each match (default: 300)", 
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "use_regex", "boolean", 
+            "Treat query as a regex pattern (default: false)", 
             false
         ));
         
@@ -468,6 +513,7 @@ AgentToolResult BuiltinToolsProvider::do_content_chunk(const Json& params) const
     
     auto id = params["id"].get<std::string>();
     size_t chunk_index = 0;
+    bool clean_html = false;
     
     if (params.contains("chunk")) {
         if (params["chunk"].is_number()) {
@@ -481,7 +527,17 @@ AgentToolResult BuiltinToolsProvider::do_content_chunk(const Json& params) const
         }
     }
     
-    LOG_DEBUG("[content_chunk tool] Retrieving chunk %zu of '%s'", chunk_index, id.c_str());
+    if (params.contains("clean_html")) {
+        if (params["clean_html"].is_boolean()) {
+            clean_html = params["clean_html"].get<bool>();
+        } else if (params["clean_html"].is_string()) {
+            std::string val = params["clean_html"].get<std::string>();
+            clean_html = (val == "true" || val == "1" || val == "yes");
+        }
+    }
+    
+    LOG_DEBUG("[content_chunk tool] Retrieving chunk %zu of '%s' (clean_html=%s)", 
+              chunk_index, id.c_str(), clean_html ? "true" : "false");
     
     if (!chunker_->has(id)) {
         return AgentToolResult::fail(
@@ -489,7 +545,7 @@ AgentToolResult BuiltinToolsProvider::do_content_chunk(const Json& params) const
         );
     }
     
-    auto chunk = chunker_->get_chunk(id, chunk_index);
+    auto chunk = chunker_->get_chunk(id, chunk_index, clean_html);
     return AgentToolResult::ok(chunk);
 }
 
@@ -498,16 +554,22 @@ AgentToolResult BuiltinToolsProvider::do_content_search(const Json& params) cons
         return AgentToolResult::fail("Content chunker not available");
     }
     
-    if (!params.contains("id") || !params["id"].is_string()) {
-        return AgentToolResult::fail("Missing required parameter: id");
-    }
     if (!params.contains("query") || !params["query"].is_string()) {
         return AgentToolResult::fail("Missing required parameter: query");
     }
     
-    auto id = params["id"].get<std::string>();
+    std::string id;
+    bool search_all = false;
+    
+    if (params.contains("id") && params["id"].is_string()) {
+        id = params["id"].get<std::string>();
+    } else {
+        search_all = true;
+    }
+    
     auto query = params["query"].get<std::string>();
-    size_t context_chars = 500;
+    size_t context_chars = 300;
+    bool use_regex = false;
     
     if (params.contains("context")) {
         if (params["context"].is_number()) {
@@ -521,16 +583,33 @@ AgentToolResult BuiltinToolsProvider::do_content_search(const Json& params) cons
         }
     }
     
-    LOG_DEBUG("[content_search tool] Searching for '%s' in '%s'", query.c_str(), id.c_str());
-    
-    if (!chunker_->has(id)) {
-        return AgentToolResult::fail(
-            "Content ID '" + id + "' not found. It may have expired or been cleared."
-        );
+    if (params.contains("use_regex")) {
+        if (params["use_regex"].is_boolean()) {
+            use_regex = params["use_regex"].get<bool>();
+        } else if (params["use_regex"].is_string()) {
+            std::string val = params["use_regex"].get<std::string>();
+            use_regex = (val == "true" || val == "1" || val == "yes");
+        }
     }
     
-    auto result = chunker_->search(id, query, context_chars);
-    return AgentToolResult::ok(result);
+    if (search_all) {
+        LOG_DEBUG("[content_search tool] Searching for '%s' in ALL chunks (regex=%s)", 
+                  query.c_str(), use_regex ? "true" : "false");
+        auto result = chunker_->search_all_chunks(query, context_chars, use_regex);
+        return AgentToolResult::ok(result);
+    } else {
+        LOG_DEBUG("[content_search tool] Searching for '%s' in '%s' (regex=%s)", 
+                  query.c_str(), id.c_str(), use_regex ? "true" : "false");
+        
+        if (!chunker_->has(id)) {
+            return AgentToolResult::fail(
+                "Content ID '" + id + "' not found. It may have expired or been cleared."
+            );
+        }
+        
+        auto result = chunker_->search_with_chunks(id, query, context_chars, use_regex);
+        return AgentToolResult::ok(result);
+    }
 }
 
 } // namespace opencrank

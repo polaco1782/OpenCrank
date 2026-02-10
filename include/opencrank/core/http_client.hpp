@@ -61,6 +61,13 @@ public:
                            const std::map<std::string, std::string>& form_data,
                            const std::map<std::string, std::string>& extra_headers = std::map<std::string, std::string>());
 
+    // Generic request with any HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, etc.)
+    HttpResponse request(const std::string& method,
+                         const std::string& url,
+                         const std::string& body = "",
+                         const std::map<std::string, std::string>& headers = std::map<std::string, std::string>(),
+                         const std::string& proxy = "");
+
 private:
     CURL* curl_;
     long timeout_ms_;

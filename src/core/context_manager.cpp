@@ -76,14 +76,19 @@ std::string ContextManager::build_resume_prompt() const {
     return 
         "You are about to run out of context window space. Your task now is to create "
         "a RESUME of everything that has happened in this conversation. This resume will "
-        "be used to restore your memory after the context is cleared.\n\n"
+        "capture the essence of the conversation that will be used to restore your memory "
+        "after the context is cleared.\n\n"
         "The resume MUST include:\n"
         "1. **Your original instructions and role** - What system prompt/personality you were given\n"
         "2. **What the user asked for** - The original request and any follow-up requests\n"
-        "3. **What you did** - Tools called, actions taken, results obtained\n"
+        "3. **What you did** - Brief overview of tools called, actions taken, results obtained\n"
         "4. **Current state** - Where you are in the task, what's pending\n"
         "5. **Important facts** - Any key information, file paths, URLs, names mentioned\n"
         "6. **What to do next** - Clear instructions for continuing the task\n\n"
+        "What to avoid in the resume:\n"
+        "- Do NOT include irrelevant chit-chat or pleasantries\n"
+        "- Do NOT include any content that can be easily re-read from the conversation (e.g., simple acknowledgments)\n"
+        "- Do NOT include parameters used on the tools"
         "Write the resume as a structured document. Be comprehensive but concise. "
         "Do NOT use any tools. Just output the resume text directly.";
 }

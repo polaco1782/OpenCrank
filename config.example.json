@@ -90,7 +90,7 @@
 
   "agent": {
     "_note": "Agentic loop configuration for AI tool-calling behavior",
-    "max_iterations": 15,
+    "max_iterations": 30,
     "max_consecutive_errors": 5,
     "max_tool_result_size": 15000,
     "auto_chunk_large_results": true,

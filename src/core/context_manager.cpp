@@ -165,24 +165,34 @@ bool ContextManager::save_resume_to_memory(
     content << "\n---\n\n";
     content << resume;
     
-    // Save to memory using the memory_save action
-    Json params;
-    params["content"] = content.str();
-    params["daily"] = true;
-    params["append"] = true;
-    params["category"] = "resume";
-    params["importance"] = 8;
-    params["tags"] = "context,resume,session";
+    // Save to daily file on disk
+    Json file_params;
+    file_params["content"] = content.str();
+    file_params["daily"] = true;
+    file_params["append"] = true;
     
-    ToolResult result = memory_tool_->execute("memory_save", params);
-    
-    if (result.success) {
-        LOG_INFO("[ContextManager] Resume saved to persistent memory");
+    ToolResult file_result = memory_tool_->execute("file_save", file_params);
+    if (file_result.success) {
+        LOG_INFO("[ContextManager] Resume saved to daily file");
     } else {
-        LOG_ERROR("[ContextManager] Failed to save resume: %s", result.error.c_str());
+        LOG_ERROR("[ContextManager] Failed to save resume file: %s", file_result.error.c_str());
     }
     
-    return result.success;
+    // Also save to structured database
+    Json db_params;
+    db_params["content"] = content.str();
+    db_params["category"] = "resume";
+    db_params["importance"] = 8;
+    db_params["tags"] = "context,resume,session";
+    
+    ToolResult db_result = memory_tool_->execute("memory_save", db_params);
+    if (db_result.success) {
+        LOG_INFO("[ContextManager] Resume saved to database");
+    } else {
+        LOG_ERROR("[ContextManager] Failed to save resume to database: %s", db_result.error.c_str());
+    }
+    
+    return file_result.success || db_result.success;
 }
 
 std::string ContextManager::load_resume_from_memory(
@@ -192,19 +202,19 @@ std::string ContextManager::load_resume_from_memory(
         return "";
     }
     
-    // Search for recent resumes
+    // Search for recent resumes in the database
     Json params;
     params["query"] = "context resume " + session_key;
     params["max_results"] = 1;
     
     ToolResult result = memory_tool_->execute("memory_search", params);
     
-    if (result.success && result.data.contains("results") && 
-        result.data["results"].is_array() && !result.data["results"].empty()) {
+    if (result.success && result.data.contains("memories") && 
+        result.data["memories"].is_array() && !result.data["memories"].empty()) {
         
-        const Json& first_result = result.data["results"][0];
-        if (first_result.contains("snippet") && first_result["snippet"].is_string()) {
-            return first_result["snippet"].get<std::string>();
+        const Json& first_result = result.data["memories"][0];
+        if (first_result.contains("content") && first_result["content"].is_string()) {
+            return first_result["content"].get<std::string>();
         }
     }
     

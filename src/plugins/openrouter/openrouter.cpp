@@ -1,5 +1,6 @@
 #include <opencrank/plugins/openrouter/openrouter.hpp>
 #include <opencrank/core/loader.hpp>
+#include <opencrank/core/utils.hpp>
 #include <sstream>
 
 namespace opencrank {
@@ -212,7 +213,14 @@ CompletionResult OpenRouterAI::chat(
     LOG_DEBUG("[OpenRouter] ◀ OUT Received response [HTTP %d] (%zu bytes)", 
               response.status_code, response.body.size());
     
-    Json resp = response.json();
+    std::string sanitized_body = sanitize_utf8(response.body);
+    Json resp;
+    try {
+        resp = Json::parse(sanitized_body);
+    } catch (const std::exception& e) {
+        LOG_ERROR("[OpenRouter] Failed to parse JSON response: %s", e.what());
+        return CompletionResult::fail("Invalid JSON response: " + std::string(e.what()));
+    }
     
     if (response.status_code != 200) {
         std::string error_msg = "API error";

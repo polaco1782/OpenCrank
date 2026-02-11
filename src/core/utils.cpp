@@ -175,8 +175,10 @@ std::string sanitize_utf8(const std::string& s) {
             // Strip carriage return (0x0D) and other control chars
             if (c == 0x09 || c == 0x0A || c >= 0x20) {
                 out.push_back(static_cast<char>(c));
+            } else {
+                // Replace control character with space or skip
+                out.push_back(' ');
             }
-            // else: skip control character (including 0x0D \r)
             ++i;
             continue;
         } else if ((c & 0xE0) == 0xC0) {
@@ -186,7 +188,8 @@ std::string sanitize_utf8(const std::string& s) {
         } else if ((c & 0xF8) == 0xF0) {
             expected = 4;
         } else {
-            // Invalid leading byte, skip
+            // Invalid leading byte, replace with replacement char
+            out += "\xEF\xBF\xBD"; // �
             ++i;
             continue;
         }
@@ -210,7 +213,8 @@ std::string sanitize_utf8(const std::string& s) {
             }
             i += expected;
         } else {
-            // Skip invalid byte
+            // Replace invalid sequence with replacement char
+            out += "\xEF\xBF\xBD"; // �
             ++i;
         }
     }

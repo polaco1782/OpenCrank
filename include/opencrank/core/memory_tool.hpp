@@ -1,7 +1,11 @@
 /*
  * opencrank C++11 - Memory Tool (Core)
  * 
- * Provides memory_save, memory_search, memory_get, and task operations.
+ * Clean separation of concerns:
+ *   file_*   actions → FILE operations (read/write/list memory files)
+ *   memory_* actions → DATABASE operations (structured memory entries in SQLite)
+ *   task_*   actions → DATABASE operations (task/reminder management in SQLite)
+ *
  * Part of core functionality for use by other plugins.
  */
 #ifndef opencrank_CORE_MEMORY_TOOL_HPP
@@ -52,11 +56,19 @@ public:
 private:
     std::unique_ptr<MemoryManager> manager_;
     MemoryConfig config_;
-    // Tool implementations
+    
+    // ---- FILE operations (read/write/list memory files) ----
+    Json file_save(const Json& params);
+    Json file_get(const Json& params);
+    Json file_list(const Json& params);
+    
+    // ---- MEMORY operations (DATABASE only - structured entries) ----
     Json memory_save(const Json& params);
     Json memory_search(const Json& params);
-    Json memory_get(const Json& params);
     Json memory_list(const Json& params);
+    Json memory_delete(const Json& params);
+    
+    // ---- TASK operations (DATABASE only) ----
     Json task_create(const Json& params);
     Json task_complete(const Json& params);
     Json task_list(const Json& params);

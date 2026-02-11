@@ -130,7 +130,7 @@ std::string ContextManager::generate_resume(
     
     // Truncate if too long
     if (resume.size() > config_.max_resume_chars) {
-        resume = resume.substr(0, config_.max_resume_chars);
+        resume.resize(config_.max_resume_chars);
         resume += "\n\n[Resume truncated due to size limits]";
         LOG_WARN("[ContextManager] Resume truncated from %zu to %zu chars",
                  result.content.size(), resume.size());

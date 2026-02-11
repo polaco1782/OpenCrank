@@ -78,8 +78,6 @@ enum class ChannelStatus {
     ERROR
 };
 
-const char* channel_status_str(ChannelStatus s);
-
 // Callback types
 using MessageCallback = std::function<void(const Message&)>;
 using ErrorCallback = std::function<void(const std::string& channel, const std::string& error)>;

@@ -449,7 +449,8 @@ std::vector<SkillCommandSpec> SkillManager::build_workspace_skill_command_specs(
         }
         std::string description = raw_desc;
         if (description.size() > SKILL_COMMAND_DESCRIPTION_MAX_LENGTH) {
-            description = description.substr(0, SKILL_COMMAND_DESCRIPTION_MAX_LENGTH - 1) + "...";
+            description.resize(SKILL_COMMAND_DESCRIPTION_MAX_LENGTH - 1);
+            description += "...";
         }
         
         // Build dispatch if specified
@@ -559,7 +560,7 @@ std::string SkillManager::sanitize_skill_command_name(const std::string& raw) {
     
     // Truncate to max length
     if (trimmed.size() > SKILL_COMMAND_MAX_LENGTH) {
-        trimmed = trimmed.substr(0, SKILL_COMMAND_MAX_LENGTH);
+        trimmed.resize(SKILL_COMMAND_MAX_LENGTH);
     }
     
     return trimmed.empty() ? "skill" : trimmed;
@@ -717,7 +718,7 @@ std::pair<const SkillCommandSpec*, std::string> SkillManager::resolve_skill_comm
             args = args.substr(start);
             size_t end = args.find_last_not_of(" \t\n\r");
             if (end != std::string::npos) {
-                args = args.substr(0, end + 1);
+                args.resize(end + 1);
             }
         } else {
             args.clear();
@@ -839,32 +840,6 @@ std::string SkillManager::list_skills_for_display(
     }
     
     return oss.str();
-}
-
-// Helper functions
-
-std::string resolve_bundled_skills_dir() {
-    // Check for OPENCRANK_SKILLS_DIR environment variable
-    const char* env_dir = getenv("OPENCRANK_SKILLS_DIR");
-    if (env_dir && env_dir[0] != '\0') {
-        return env_dir;
-    }
-    
-    // Default to relative path from executable
-    // In production, this would be determined by installation location
-    return "";
-}
-
-std::string resolve_managed_skills_dir() {
-    const char* home = getenv("HOME");
-    if (!home) {
-        home = getenv("USERPROFILE");
-    }
-    if (!home) {
-        return "";
-    }
-    
-    return std::string(home) + "/.config/opencrank/skills";
 }
 
 } // namespace opencrank

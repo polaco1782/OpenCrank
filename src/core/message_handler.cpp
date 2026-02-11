@@ -485,8 +485,7 @@ void process_message(const Message& msg) {
         if (at_pos != std::string::npos) {
             auto space_pos = cmd_text.find(' ');
             if (space_pos == std::string::npos || at_pos < space_pos) {
-                cmd_text = cmd_text.substr(0, at_pos) + 
-                          (space_pos != std::string::npos ? cmd_text.substr(space_pos) : "");
+                cmd_text.erase(at_pos, space_pos != std::string::npos ? space_pos - at_pos : std::string::npos);
             }
         }
         

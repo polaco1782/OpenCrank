@@ -286,33 +286,4 @@ std::vector<std::string> SessionManager::session_keys() const {
     return keys;
 }
 
-// ============ Route resolution ============
-
-ResolvedRoute resolve_route(const std::string& channel,
-                           const std::string& account_id,
-                           const RoutePeer* peer,
-                           const std::string& default_agent_id,
-                           DMScope scope) {
-    ResolvedRoute result;
-    
-    result.channel = to_lower(trim(channel));
-    result.account_id = trim(account_id.empty() ? SessionKey::DEFAULT_ACCOUNT_ID : account_id);
-    result.agent_id = SessionKey::sanitize_agent_id(
-        default_agent_id.empty() ? SessionKey::DEFAULT_AGENT_ID : default_agent_id
-    );
-    
-    result.session_key = SessionKey::build(
-        result.agent_id,
-        result.channel,
-        result.account_id,
-        peer,
-        scope
-    );
-    
-    result.main_session_key = SessionKey::build_main(result.agent_id);
-    result.matched_by = "default";
-    
-    return result;
-}
-
 } // namespace opencrank

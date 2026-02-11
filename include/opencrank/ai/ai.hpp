@@ -23,7 +23,6 @@ enum class MessageRole {
 };
 
 std::string role_to_string(MessageRole role);
-MessageRole string_to_role(const std::string& str);
 
 // A message in a conversation
 struct ConversationMessage {

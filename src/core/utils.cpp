@@ -18,10 +18,6 @@ namespace opencrank {
 
 // ============ Math utilities ============
 
-int clamp_int(int value, int min_val, int max_val) {
-    return clamp(value, min_val, max_val);
-}
-
 // ============ Time utilities ============
 
 void sleep_ms(int milliseconds) {
@@ -45,15 +41,6 @@ std::string format_timestamp(int64_t timestamp) {
     gmtime_r(&t, &tm_buf);
     char buf[32];
     strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
-    return std::string(buf);
-}
-
-std::string format_date(int64_t timestamp) {
-    time_t t = static_cast<time_t>(timestamp);
-    struct tm tm_buf;
-    gmtime_r(&t, &tm_buf);
-    char buf[16];
-    strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
     return std::string(buf);
 }
 
@@ -86,21 +73,9 @@ std::string to_lower(const std::string& s) {
     return result;
 }
 
-std::string to_upper(const std::string& s) {
-    std::string result = s;
-    std::transform(result.begin(), result.end(), result.begin(),
-                   [](unsigned char c) { return std::toupper(c); });
-    return result;
-}
-
 bool starts_with(const std::string& s, const std::string& prefix) {
     if (prefix.size() > s.size()) return false;
     return s.compare(0, prefix.size(), prefix) == 0;
-}
-
-bool ends_with(const std::string& s, const std::string& suffix) {
-    if (suffix.size() > s.size()) return false;
-    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
 std::vector<std::string> split(const std::string& s, char delimiter) {
@@ -137,17 +112,6 @@ std::string join(const std::vector<std::string>& parts, const std::string& delim
         oss << delimiter << parts[i];
     }
     return oss.str();
-}
-
-std::string replace_all(const std::string& s, const std::string& from, const std::string& to) {
-    if (from.empty()) return s;
-    std::string result = s;
-    size_t pos = 0;
-    while ((pos = result.find(from, pos)) != std::string::npos) {
-        result.replace(pos, from.size(), to);
-        pos += to.size();
-    }
-    return result;
 }
 
 std::string truncate_safe(const std::string& s, size_t max_len) {
@@ -224,111 +188,7 @@ std::string sanitize_utf8(const std::string& s) {
 
 // ============ Phone number utilities ============
 
-std::string normalize_e164(const std::string& number) {
-    std::string stripped = without_whatsapp_prefix(number);
-    stripped = trim(stripped);
-    
-    // Extract only digits and leading +
-    std::string result;
-    bool has_plus = !stripped.empty() && stripped[0] == '+';
-    
-    for (size_t i = 0; i < stripped.size(); ++i) {
-        if (std::isdigit(static_cast<unsigned char>(stripped[i]))) {
-            result += stripped[i];
-        }
-    }
-    
-    if (result.empty()) return "";
-    
-    // Ensure starts with +
-    if (has_plus || result[0] != '+') {
-        result = "+" + result;
-    }
-    
-    return result;
-}
-
-std::string with_whatsapp_prefix(const std::string& number) {
-    if (starts_with(number, "whatsapp:")) return number;
-    return "whatsapp:" + number;
-}
-
-std::string without_whatsapp_prefix(const std::string& number) {
-    if (starts_with(number, "whatsapp:")) {
-        return number.substr(9);
-    }
-    return number;
-}
-
-std::string jid_to_e164(const std::string& jid) {
-    // Format: 1234567890@s.whatsapp.net or 1234567890:1@s.whatsapp.net
-    size_t at_pos = jid.find('@');
-    if (at_pos == std::string::npos) return "";
-    
-    std::string prefix = jid.substr(0, at_pos);
-    
-    // Remove device suffix (e.g., :1)
-    size_t colon_pos = prefix.find(':');
-    if (colon_pos != std::string::npos) {
-        prefix = prefix.substr(0, colon_pos);
-    }
-    
-    // Check if it's a valid phone JID
-    if (jid.find("@s.whatsapp.net") == std::string::npos &&
-        jid.find("@hosted") == std::string::npos) {
-        return "";  // Not a phone number JID
-    }
-    
-    // Verify all digits
-    for (size_t i = 0; i < prefix.size(); ++i) {
-        if (!std::isdigit(static_cast<unsigned char>(prefix[i]))) {
-            return "";
-        }
-    }
-    
-    return "+" + prefix;
-}
-
-std::string e164_to_jid(const std::string& e164) {
-    std::string digits;
-    for (size_t i = 0; i < e164.size(); ++i) {
-        if (std::isdigit(static_cast<unsigned char>(e164[i]))) {
-            digits += e164[i];
-        }
-    }
-    if (digits.empty()) return "";
-    return digits + "@s.whatsapp.net";
-}
-
 // ============ Path utilities ============
-
-std::string get_home_dir() {
-    const char* home = std::getenv("HOME");
-    if (home && home[0]) return std::string(home);
-    
-    home = std::getenv("USERPROFILE");
-    if (home && home[0]) return std::string(home);
-    
-    return "";
-}
-
-std::string resolve_user_path(const std::string& path) {
-    std::string trimmed = trim(path);
-    if (trimmed.empty()) return trimmed;
-    
-    // Expand ~ to home directory
-    if (trimmed[0] == '~') {
-        std::string home = get_home_dir();
-        if (trimmed.size() == 1) {
-            return home;
-        }
-        if (trimmed[1] == '/' || trimmed[1] == '\\') {
-            return home + trimmed.substr(1);
-        }
-    }
-    
-    return trimmed;
-}
 
 std::string normalize_path(const std::string& path) {
     if (path.empty()) return path;
@@ -375,69 +235,6 @@ std::string join_path(const std::string& a, const std::string& b) {
     return a + b;
 }
 
-std::string basename(const std::string& path) {
-    size_t pos = path.rfind('/');
-    if (pos == std::string::npos) return path;
-    return path.substr(pos + 1);
-}
-
-std::string dirname(const std::string& path) {
-    size_t pos = path.rfind('/');
-    if (pos == std::string::npos) return ".";
-    if (pos == 0) return "/";
-    return path.substr(0, pos);
-}
-
-bool path_exists(const std::string& path) {
-    struct stat st;
-    return stat(path.c_str(), &st) == 0;
-}
-
-bool is_directory(const std::string& path) {
-    struct stat st;
-    if (stat(path.c_str(), &st) != 0) return false;
-    return S_ISDIR(st.st_mode);
-}
-
-bool mkdir_p(const std::string& path) {
-    if (path.empty()) return false;
-    
-    std::vector<std::string> parts = split(path, '/');
-    std::string current;
-    
-    if (path[0] == '/') {
-        current = "/";
-    }
-    
-    for (size_t i = 0; i < parts.size(); ++i) {
-        if (parts[i].empty()) continue;
-        current = join_path(current, parts[i]);
-        
-        if (!path_exists(current)) {
-            if (mkdir(current.c_str(), 0755) != 0) {
-                return false;
-            }
-        } else if (!is_directory(current)) {
-            return false;
-        }
-    }
-    
-    return true;
-}
-
-std::string shorten_home_path(const std::string& path) {
-    std::string home = get_home_dir();
-    if (home.empty()) return path;
-    
-    if (path == home) return "~";
-    
-    if (starts_with(path, home + "/")) {
-        return "~" + path.substr(home.size());
-    }
-    
-    return path;
-}
-
 // ============ UUID utilities ============
 
 std::string generate_uuid() {
@@ -463,30 +260,6 @@ std::string generate_uuid() {
 }
 
 // ============ Hashing utilities ============
-
-std::string sha256_hex(const std::string& data) {
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256(reinterpret_cast<const unsigned char*>(data.c_str()), data.size(), hash);
-    
-    std::ostringstream oss;
-    oss << std::hex << std::setfill('0');
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
-        oss << std::setw(2) << static_cast<int>(hash[i]);
-    }
-    return oss.str();
-}
-
-std::string md5_hex(const std::string& data) {
-    unsigned char hash[MD5_DIGEST_LENGTH];
-    MD5(reinterpret_cast<const unsigned char*>(data.c_str()), data.size(), hash);
-    
-    std::ostringstream oss;
-    oss << std::hex << std::setfill('0');
-    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) {
-        oss << std::setw(2) << static_cast<int>(hash[i]);
-    }
-    return oss.str();
-}
 
 // ============ HTML utilities ============
 
@@ -515,11 +288,11 @@ std::string strip_html_for_ai(const std::string& html) {
             }
 
             // Track script/style blocks
-            if (peek == "script" || peek.find("script") == 0) {
+            if (peek == "script" || starts_with(peek, "script")) {
                 in_script = true;
             } else if (peek == "/script") {
                 in_script = false;
-            } else if (peek == "style" || peek.find("style") == 0) {
+            } else if (peek == "style" || starts_with(peek, "style")) {
                 in_style = true;
             } else if (peek == "/style") {
                 in_style = false;
@@ -631,41 +404,6 @@ std::string sanitize_url(const std::string& url) {
             result += c;
         }
         // Skip other characters (including control chars, spaces, etc.)
-    }
-    
-    return result;
-}
-
-std::string strip_html_tags(const std::string& input) {
-    std::string result;
-    result.reserve(input.size());
-    bool in_tag = false;
-    
-    for (char c : input) {
-        if (c == '<') {
-            in_tag = true;
-        } else if (c == '>') {
-            in_tag = false;
-        } else if (!in_tag) {
-            result += c;
-        }
-    }
-    
-    return result;
-}
-
-std::string remove_invalid_url_chars(const std::string& url) {
-    std::string result;
-    result.reserve(url.size());
-    
-    for (char c : url) {
-        // Keep only valid URL characters
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
-            (c >= '0' && c <= '9') || c == ':' || c == '/' || c == '.' || 
-            c == '-' || c == '_' || c == '~' || c == '?' || c == '&' || 
-            c == '=' || c == '#' || c == '%' || c == '+' || c == '@') {
-            result += c;
-        }
     }
     
     return result;

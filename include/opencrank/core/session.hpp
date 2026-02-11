@@ -190,13 +190,6 @@ struct ResolvedRoute {
     std::string matched_by;  // "binding.peer", "binding.channel", "default"
 };
 
-// Route a message to the appropriate session
-ResolvedRoute resolve_route(const std::string& channel,
-                           const std::string& account_id,
-                           const RoutePeer* peer,
-                           const std::string& default_agent_id,
-                           DMScope scope);
-
 } // namespace opencrank
 
 #endif // opencrank_CORE_SESSION_HPP

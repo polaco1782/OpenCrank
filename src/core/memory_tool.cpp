@@ -552,7 +552,8 @@ ToolResult MemoryTool::do_memory_get(const Json& params) {
             // Truncate long content for listing
             std::string preview = entry.content;
             if (preview.size() > 200) {
-                preview = preview.substr(0, 200) + "...";
+                preview.resize(200);
+                preview += "...";
             }
             out << "Content: " << preview << "\n\n";
             
@@ -691,7 +692,8 @@ ToolResult MemoryTool::do_file_read(const Json& params) {
     // Truncate very large files
     constexpr size_t MAX_SIZE = 50000;
     if (result.size() > MAX_SIZE) {
-        result = result.substr(0, MAX_SIZE) + "\n\n... [truncated, file too large] ...";
+        result.resize(MAX_SIZE);
+        result += "\n\n... [truncated, file too large] ...";
     }
     
     Json data;

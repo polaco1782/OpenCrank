@@ -245,7 +245,8 @@ HttpResponse HttpClient::perform_request(const std::string& method,
         if (!resp.body.empty()) {
             std::string snippet = resp.body;
             if (snippet.size() > 512) {
-                snippet = snippet.substr(0, 512) + "...";
+                snippet.resize(512);
+                snippet += "...";
             }
             oss << ": " << snippet;
         }

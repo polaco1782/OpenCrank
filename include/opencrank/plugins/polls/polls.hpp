@@ -157,12 +157,6 @@ private:
     std::map<std::string, std::vector<PollVote> > votes_;  // poll_id -> votes
 };
 
-// Format poll for display (simple text format)
-std::string format_poll(const Poll& poll);
-
-// Format poll results for display
-std::string format_poll_results(const Poll& poll, const PollResults& results);
-
 // Polls plugin class
 class PollsPlugin : public Plugin {
 public:

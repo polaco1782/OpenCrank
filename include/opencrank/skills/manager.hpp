@@ -120,12 +120,6 @@ private:
     void set_error(const std::string& err);
 };
 
-// Helper functions for bundled skills
-std::string resolve_bundled_skills_dir();
-
-// Helper for managed skills directory
-std::string resolve_managed_skills_dir();
-
 } // namespace opencrank
 
 #endif // opencrank_SKILLS_MANAGER_HPP

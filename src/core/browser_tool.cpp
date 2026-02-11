@@ -303,7 +303,7 @@ ToolResult BrowserTool::do_fetch(const Json& params) {
     }
     
     // Validate URL format
-    if (sanitized_url.find("http://") != 0 && sanitized_url.find("https://") != 0) {
+    if (!starts_with(sanitized_url, "http://") && !starts_with(sanitized_url, "https://")) {
         result.success = false;
         result.error = "URL must start with http:// or https://";
         return result;
@@ -362,7 +362,7 @@ ToolResult BrowserTool::do_fetch(const Json& params) {
         bool truncated = false;
         size_t original_length = content.length();
         if (content.length() > max_len) {
-            content = content.substr(0, max_len);
+            content.resize(max_len);
             truncated = true;
         }
 
@@ -448,7 +448,7 @@ ToolResult BrowserTool::do_extract_text(const Json& params) {
     bool truncated = false;
     size_t original_length = text.length();
     if (text.length() > max_len) {
-        text = text.substr(0, max_len);
+        text.resize(max_len);
         truncated = true;
     }
 
@@ -596,7 +596,7 @@ ToolResult BrowserTool::perform_browser_request(const std::string& method,
         bool truncated = false;
         size_t original_length = content.length();
         if (content.length() > max_len) {
-            content = content.substr(0, max_len);
+            content.resize(max_len);
             truncated = true;
         }
 
@@ -628,7 +628,10 @@ ToolResult BrowserTool::perform_browser_request(const std::string& method,
         // Include response body for error context
         if (!response.body.empty()) {
             std::string err_body = response.body;
-            if (err_body.size() > 2000) err_body = err_body.substr(0, 2000) + "...";
+            if (err_body.size() > 2000) {
+                err_body.resize(2000);
+                err_body += "...";
+            }
             data["response_body"] = err_body;
         }
         result.success = false;
@@ -675,7 +678,7 @@ ToolResult BrowserTool::do_request(const Json& params) {
     }
     
     // Validate URL format
-    if (sanitized_url.find("http://") != 0 && sanitized_url.find("https://") != 0) {
+    if (!starts_with(sanitized_url, "http://") && !starts_with(sanitized_url, "https://")) {
         result.success = false;
         result.error = "URL must start with http:// or https://";
         return result;
@@ -781,7 +784,7 @@ ToolResult BrowserTool::do_request(const Json& params) {
             bool truncated = false;
             size_t original_length = content.length();
             if (content.length() > max_len) {
-                content = content.substr(0, max_len);
+                content.resize(max_len);
                 truncated = true;
             }
             data["content"] = content;
@@ -800,7 +803,10 @@ ToolResult BrowserTool::do_request(const Json& params) {
             data["error"] = "HTTP request failed with status " + std::to_string(response.status_code);
             if (!response.body.empty()) {
                 std::string err_body = response.body;
-                if (err_body.size() > 2000) err_body = err_body.substr(0, 2000) + "...";
+                if (err_body.size() > 2000) {
+                    err_body.resize(2000);
+                    err_body += "...";
+                }
                 data["response_body"] = err_body;
             }
             result.success = false;
@@ -900,13 +906,13 @@ std::string BrowserTool::strip_html(const std::string& html) {
                 lower_rest += static_cast<char>(std::tolower(html[j]));
             }
 
-            if (lower_rest.find("<script") == 0) {
+            if (starts_with(lower_rest, "<script")) {
                 in_script = true;
-            } else if (lower_rest.find("</script") == 0) {
+            } else if (starts_with(lower_rest, "</script")) {
                 in_script = false;
-            } else if (lower_rest.find("<style") == 0) {
+            } else if (starts_with(lower_rest, "<style")) {
                 in_style = true;
-            } else if (lower_rest.find("</style") == 0) {
+            } else if (starts_with(lower_rest, "</style")) {
                 in_style = false;
             }
         } else if (c == '>') {
@@ -996,7 +1002,7 @@ std::vector<std::pair<std::string, std::string> > BrowserTool::extract_links(
                     text = normalize_whitespace(text);
                 }
 
-                if (!url.empty() && url.find("javascript:") != 0 && url.find("#") != 0) {
+                if (!url.empty() && !starts_with(url, "javascript:") && !starts_with(url, "#")) {
                     links.push_back(std::make_pair(url, text));
                 }
             }
@@ -1054,7 +1060,7 @@ static bool has_attr(const std::string& tag, const std::string& attr_name) {
 
 static std::string make_absolute_url(const std::string& url, const std::string& base_url) {
     if (url.empty()) return base_url;
-    if (url.find("http://") == 0 || url.find("https://") == 0) return url;
+    if (starts_with(url, "http://") || starts_with(url, "https://")) return url;
     if (url[0] == '/') {
         size_t scheme_end = base_url.find("://");
         if (scheme_end != std::string::npos) {

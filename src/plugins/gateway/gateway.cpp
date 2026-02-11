@@ -93,23 +93,6 @@ public:
         // Nothing to do here - kept for API compatibility
     }
     
-    bool send_to_client(crow::websocket::connection* conn, const std::string& data) {
-        if (!conn) return false;
-        
-        try {
-            conn->send_text(data);
-            return true;
-        } catch (const std::exception& e) {
-            LOG_ERROR("Failed to send to WebSocket client: %s", e.what());
-            return false;
-        }
-    }
-    
-    // Get connection by client pointer (for sending from GatewayClient)
-    crow::websocket::connection* get_connection(void* ws_conn) {
-        return static_cast<crow::websocket::connection*>(ws_conn);
-    }
-    
 private:
     void setup_routes() {
         // Serve static HTML control UI

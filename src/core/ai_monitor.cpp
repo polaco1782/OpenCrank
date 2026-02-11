@@ -5,6 +5,7 @@
 #include <opencrank/core/application.hpp>
 #include <opencrank/core/channel.hpp>
 #include <opencrank/core/logger.hpp>
+#include <opencrank/core/message_handler.hpp>
 
 namespace opencrank {
 
@@ -192,6 +193,11 @@ void AIProcessMonitor::check_session(const std::string& session_id,
         
         LOG_WARN("[AIProcessMonitor] HUNG SESSION DETECTED [%s] - no heartbeat for %llds",
                  session_id.c_str(), static_cast<long long>(elapsed));
+        
+        // Broadcast critical notification about hung session
+        std::string message = "AI session '" + session_id + "' has been detected as hung after " + 
+                             std::to_string(static_cast<long long>(elapsed)) + " seconds of inactivity";
+        broadcast_notification(message, "critical", "\xf0\x9f\x9a\xa8");  // 🚨
         
         // Invoke callback if set
         if (hung_callback_) {

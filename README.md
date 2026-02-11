@@ -219,8 +219,8 @@ Results are injected back as plain text:
 | `browser_fetch` | Fetch web page content |
 | `browser_links` | Extract links from a URL |
 | `memory_save` | Save content to persistent memory |
-| `memory_search` | BM25 full-text search across memory |
-| `memory_get` | Read a specific memory file |
+| `memory_search` | text search across memory |
+| `memory_get` | Read a specific memory record |
 | `task_create` | Create a tracked task |
 | `task_list` | List pending tasks |
 | `task_complete` | Mark a task as done |

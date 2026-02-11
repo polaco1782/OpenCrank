@@ -204,9 +204,7 @@ public:
         const std::string& user_message,
         std::vector<ConversationMessage>& history,
         const std::string& system_prompt,
-        const AgentConfig& config = AgentConfig(),
-        const std::string& channel_id = "",
-        const std::string& chat_id = ""
+        const AgentConfig& config = AgentConfig()
     );
     
     // Configuration
@@ -221,10 +219,6 @@ private:
     std::map<std::string, AgentTool> tools_;
     AgentConfig config_;
     ContentChunker chunker_;
-    
-    // Context for debug messages
-    std::string channel_id_;
-    std::string chat_id_;
     
     // Helper to check if response contains tool calls
     bool has_tool_calls(const std::string& response) const;

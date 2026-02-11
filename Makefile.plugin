@@ -2,8 +2,8 @@
 # This file is included by individual plugin Makefiles
 
 # Compiler and flags
-CXX = g++
-CXXFLAGS = -std=c++11 -Wall -Wextra -O2 -I../../../include
+CXX = clang++
+CXXFLAGS = -std=c++11 -Wall -Wextra -O2 -I../../../include -fPIE
 CXXFLAGS_PIC = $(CXXFLAGS) -fPIC
 LDFLAGS = -lpthread -lsqlite3 -lssl -lcrypto -lcurl -ldl
 LDFLAGS_PLUGIN = -shared

@@ -707,6 +707,25 @@ void GatewayPlugin::on_incoming_message(const Message& msg) {
     // Track most recent chat for routing outgoing messages
     recent_chat_id_ = msg.to;
     
+    // Check if this is a notification message (from notify_user tool)
+    if (msg.chat_type == "notification" && 
+        msg.reply_to_id.find("notification:") == 0) {
+        // Extract level from reply_to_id field
+        std::string level = msg.reply_to_id.substr(13);  // after "notification:"
+        
+        Json notif_payload = Json::object();
+        notif_payload["message"] = sanitize_utf8(msg.text);
+        notif_payload["level"] = level;
+        notif_payload["from"] = msg.from_name;
+        notif_payload["timestamp"] = static_cast<int>(msg.timestamp);
+        
+        LOG_DEBUG("[Gateway] Broadcasting notification (level=%s): %.100s",
+                  level.c_str(), msg.text.c_str());
+        
+        broadcast("chat.notification", notif_payload);
+        return;
+    }
+    
     route_incoming_message(msg);
 }
 

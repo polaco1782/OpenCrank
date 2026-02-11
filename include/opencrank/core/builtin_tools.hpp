@@ -71,6 +71,7 @@ private:
     AgentToolResult do_list_dir(const Json& params) const;
     AgentToolResult do_content_chunk(const Json& params) const;
     AgentToolResult do_content_search(const Json& params) const;
+    AgentToolResult do_notify_user(const Json& params) const;
 };
 
 } // namespace opencrank

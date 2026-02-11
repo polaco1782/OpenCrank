@@ -49,6 +49,61 @@ void notify_outgoing_message(
               app.registry().plugins().size(), to.c_str());
 }
 
+void broadcast_notification(
+    const std::string& message,
+    const std::string& level,
+    const std::string& emoji)
+{
+    auto& app = Application::instance();
+    
+    // Build notification payload and send as a special message through all channels
+    // Channels that support notifications (like gateway) will render them specially
+    std::string notification_text;
+    if (!emoji.empty()) {
+        notification_text = emoji + " " + message;
+    } else {
+        // Default emoji based on level
+        if (level == "critical") {
+            notification_text = "\xf0\x9f\x9a\xa8 " + message;  // 🚨
+        } else if (level == "warning") {
+            notification_text = "\xe2\x9a\xa0\xef\xb8\x8f " + message;  // ⚠️
+        } else {
+            notification_text = "\xf0\x9f\x92\xac " + message;  // 💬
+        }
+    }
+    
+    // Create notification pseudo-message for non-gateway channels (telegram, whatsapp, etc.)
+    // They'll just show it as a regular message
+    for (auto* channel : app.registry().channels()) {
+        if (channel && channel->is_initialized() && 
+            channel->status() == ChannelStatus::RUNNING) {
+            
+            // For gateway: broadcast as a special notification event
+            if (std::string(channel->channel_id()) == "gateway") {
+                // Use dynamic approach to avoid gateway dependency in core
+                // The gateway's on_incoming_message will handle notification-tagged messages
+                Message notif_msg;
+                notif_msg.id = "notif-" + std::to_string(std::time(nullptr));
+                notif_msg.channel = "system";
+                notif_msg.from = "system";
+                notif_msg.from_name = "AI Notification";
+                notif_msg.to = "user";
+                notif_msg.text = notification_text;
+                notif_msg.chat_type = "notification";  // Special tag
+                notif_msg.timestamp = std::time(nullptr);
+                // Encode level in reply_to_id field (repurposed for notifications)
+                notif_msg.reply_to_id = "notification:" + level;
+                
+                channel->on_incoming_message(notif_msg);
+            }
+            // For other channels: notifications are silent (they'll see the final response anyway)
+        }
+    }
+    
+    LOG_INFO("[MessageHandler] Broadcast notification (level=%s): %s", 
+             level.c_str(), message.c_str());
+}
+
 // ============================================================================
 // Error Callback
 // ============================================================================
@@ -220,9 +275,7 @@ bool handle_skill_command(
         rewritten, 
         session.history(), 
         app.system_prompt(),
-        agent_config,
-        msg.channel,
-        msg.to
+        agent_config
     );
     
     LOG_DEBUG("[Skills] Agent loop completed: success=%s, iterations=%d, tool_calls=%d",
@@ -283,9 +336,7 @@ std::string handle_ai_message(
         msg.text, 
         session.history(), 
         app.system_prompt(),
-        agent_config,
-        msg.channel,
-        msg.to
+        agent_config
     );
     
     LOG_DEBUG("[AI] === ◀ OUT Agent loop complete ===");

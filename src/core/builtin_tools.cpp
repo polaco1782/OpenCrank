@@ -7,6 +7,7 @@
 #include <opencrank/core/logger.hpp>
 #include <opencrank/core/config.hpp>
 #include <opencrank/core/sandbox.hpp>
+#include <opencrank/core/message_handler.hpp>
 
 #include <fstream>
 #include <sstream>
@@ -111,6 +112,7 @@ std::vector<std::string> BuiltinToolsProvider::actions() const {
     acts.push_back("list_dir");
     acts.push_back("content_chunk");
     acts.push_back("content_search");
+    acts.push_back("notify_user");
     return acts;
 }
 
@@ -129,6 +131,8 @@ ToolResult BuiltinToolsProvider::execute(const std::string& action, const Json& 
         result = do_content_chunk(params);
     } else if (action == "content_search") {
         result = do_content_search(params);
+    } else if (action == "notify_user") {
+        result = do_notify_user(params);
     } else {
         return ToolResult::fail("Unknown action: " + action);
     }
@@ -290,6 +294,38 @@ std::vector<AgentTool> BuiltinToolsProvider::get_agent_tools() const {
         
         tool.execute = [self](const Json& params) -> AgentToolResult {
             return self->do_content_search(params);
+        };
+        
+        tools.push_back(tool);
+    }
+    
+    // notify_user - Send a notification to the user
+    {
+        AgentTool tool;
+        tool.name = "notify_user";
+        tool.description = "Send a notification to the user about what you are about to do, "
+                           "your current status, or important information. Use this SPARINGLY - only for "
+                           "significant actions like starting a complex task, reporting critical findings, "
+                           "or warning about potential issues. Do NOT use it for every small step.";
+        tool.params.push_back(ToolParamSchema(
+            "message", "string", 
+            "The notification message to display to the user", 
+            true
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "level", "string", 
+            "Importance level: 'info' (green, general status), 'warning' (yellow, something to note), "
+            "or 'critical' (red, important alert). Default: 'info'", 
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "emoji", "string", 
+            "Optional emoji icon to display with the notification (e.g. '🔍', '⚙️', '✅', '⚠️')", 
+            false
+        ));
+        
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            return self->do_notify_user(params);
         };
         
         tools.push_back(tool);
@@ -634,6 +670,38 @@ AgentToolResult BuiltinToolsProvider::do_content_search(const Json& params) cons
         auto result = chunker_->search_with_chunks(id, query, context_chars, use_regex);
         return AgentToolResult::ok(result);
     }
+}
+
+AgentToolResult BuiltinToolsProvider::do_notify_user(const Json& params) const {
+    if (!params.contains("message") || !params["message"].is_string()) {
+        return AgentToolResult::fail("Missing required parameter: message");
+    }
+    
+    auto message = params["message"].get<std::string>();
+    
+    // Parse level (default: info)
+    std::string level = "info";
+    if (params.contains("level") && params["level"].is_string()) {
+        level = params["level"].get<std::string>();
+        // Validate level
+        if (level != "info" && level != "warning" && level != "critical") {
+            level = "info";
+        }
+    }
+    
+    // Parse optional emoji
+    std::string emoji;
+    if (params.contains("emoji") && params["emoji"].is_string()) {
+        emoji = params["emoji"].get<std::string>();
+    }
+    
+    LOG_INFO("[notify_user] level=%s emoji=%s message: %s", 
+             level.c_str(), emoji.c_str(), message.c_str());
+    
+    // Broadcast notification to all connected clients via channels
+    broadcast_notification(message, level, emoji);
+    
+    return AgentToolResult::ok("Notification sent to user.");
 }
 
 } // namespace opencrank

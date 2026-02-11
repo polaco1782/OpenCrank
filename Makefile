@@ -1,10 +1,10 @@
 # OpenCrank C++11 Makefile
 # Minimal build system for the modular AI assistant framework
 
-CXX = g++
-CXXFLAGS = -std=c++11 -Wall -Wextra -g -O0 -I./include
+CXX = clang++
+CXXFLAGS = -std=c++11 -Wall -Wextra -g -O0 -I./include -fPIE
 CXXFLAGS_PIC = $(CXXFLAGS) -fPIC
-LDFLAGS = -lpthread -lsqlite3 -lssl -lcrypto -lcurl -ldl
+LDFLAGS = -pie -lpthread -lsqlite3 -lssl -lcrypto -lcurl -ldl
 
 # Directories
 SRC_DIR = src

@@ -57,6 +57,18 @@ void notify_outgoing_message(
     const std::string& reply_to = ""
 );
 
+/**
+ * Broadcast a notification event to all channels.
+ * 
+ * Used by the notify_user tool to display status/intent messages
+ * to the user with importance levels and optional emoji icons.
+ */
+void broadcast_notification(
+    const std::string& message,
+    const std::string& level,
+    const std::string& emoji
+);
+
 // ============================================================================
 // Internal Message Processing
 // ============================================================================

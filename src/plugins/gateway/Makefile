@@ -3,7 +3,7 @@
 include ../../../Makefile.plugin
 
 # Override to C++17 for Crow compatibility
-CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -I../../../include
+CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -I../../../include -fPIE
 CXXFLAGS_PIC = $(CXXFLAGS) -fPIC
 
 PLUGIN_NAME = gateway

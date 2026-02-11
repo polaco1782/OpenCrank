@@ -97,6 +97,8 @@ std::vector<AgentTool> BrowserTool::get_agent_tools() const {
         tool.name = "browser_fetch";
         tool.description = 
             "Perform an HTTP GET request and return the response. "
+            "You should use this instead of using external tools such as curl or wget, when something instructs you to fetch a web page or URL content. "
+            "The browser tool can automatically extract text and links, and it also respects proxy settings. "
             "Use this to read web pages, download JSON APIs, or retrieve any URL content.\n"
             "Returns: url, status_code, content (raw HTML or text), content_type, content_length, truncated.\n"
             "Set extract_text=true to automatically strip HTML and get readable plain text.";

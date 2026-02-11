@@ -368,6 +368,51 @@
             30% { transform: translateY(-10px); opacity: 1; }
         }
         
+        /* AI Notifications */
+        .notification {
+            align-self: center;
+            max-width: 85%;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.4;
+            text-align: center;
+            border-left: 4px solid;
+            background: rgba(45, 45, 45, 0.8);
+            animation: notifSlideIn 0.3s ease-out;
+        }
+        
+        .notification.info {
+            border-left-color: var(--success);
+            color: #b0e8c0;
+        }
+        
+        .notification.warning {
+            border-left-color: #ffa502;
+            color: #ffe0a0;
+        }
+        
+        .notification.critical {
+            border-left-color: var(--error);
+            color: #ffb0b0;
+            background: rgba(80, 20, 20, 0.6);
+        }
+        
+        .notification .notif-message {
+            display: inline;
+        }
+        
+        .notification .notif-time {
+            font-size: 10px;
+            opacity: 0.5;
+            margin-left: 10px;
+        }
+        
+        @keyframes notifSlideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
         #logs {
             max-height: 150px;
             overflow-y: auto;
@@ -549,6 +594,32 @@
             messagesEl.scrollTop = messagesEl.scrollHeight;
         }
         
+        function addNotification(message, level = 'info', timestamp) {
+            // Remove empty state if present
+            const emptyState = messagesEl.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+            
+            const notifEl = document.createElement('div');
+            notifEl.className = `notification ${level}`;
+            
+            const msgSpan = document.createElement('span');
+            msgSpan.className = 'notif-message';
+            msgSpan.innerHTML = markdownToHtml(message);
+            notifEl.appendChild(msgSpan);
+            
+            if (timestamp) {
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'notif-time';
+                timeSpan.textContent = new Date(timestamp * 1000).toLocaleTimeString();
+                notifEl.appendChild(timeSpan);
+            }
+            
+            messagesEl.appendChild(notifEl);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.hostname}:${window.location.port || 18789}/ws`;
@@ -659,6 +730,11 @@
                 const chatMsg = msg.payload;
                 log(`Message from ${chatMsg.from_name} on ${chatMsg.channel}`, 'debug');
                 addMessage(chatMsg, 'received');
+            } else if (msg.event === 'chat.notification') {
+                // AI notification
+                const notif = msg.payload;
+                addNotification(notif.message, notif.level || 'info', notif.timestamp);
+                log(`Notification (${notif.level}): ${notif.message}`, 'info');
             } else {
                 log(`Event: ${msg.event}`, 'info');
             }

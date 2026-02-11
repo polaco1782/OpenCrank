@@ -1,809 +1,857 @@
 /*
- * OpenCrank C++11 - Memory Tool (Core) Implementation
- *
- * Clean separation:
- *   file_*   actions → FILE operations (read/write/list memory files)
- *   memory_* actions → DATABASE operations (structured memory entries in SQLite)
- *   task_*   actions → DATABASE operations (task/reminder management in SQLite)
+ * OpenCrank C++11 - Memory Tool Implementation
+ * 
+ * ToolProvider exposing memory, file, and task operations to the agent.
+ * Memory and tasks are database-only (read/write to SQLite).
+ * File operations use the workspace filesystem.
  */
 #include <opencrank/core/memory_tool.hpp>
-#include <opencrank/core/registry.hpp>
+#include <opencrank/core/config.hpp>
+#include <opencrank/core/logger.hpp>
+#include <opencrank/core/sandbox.hpp>
+
+#include <fstream>
 #include <sstream>
+#include <ctime>
+#include <cstdio>
+#include <cstring>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#define mkdir(path, mode) _mkdir(path)
+#else
+#include <unistd.h>
+#endif
 
 namespace opencrank {
 
-MemoryTool::MemoryTool() {}
+// ============================================================================
+// Constructor / Destructor
+// ============================================================================
+
+MemoryTool::MemoryTool() : workspace_dir_(".") {}
 
 MemoryTool::~MemoryTool() {
     shutdown();
 }
 
-const char* MemoryTool::name() const {
-    return "memory";
-}
-
-const char* MemoryTool::description() const {
-    return "Memory and task management for persistent context";
-}
-
-const char* MemoryTool::version() const {
-    return "1.0.0";
-}
-
-const char* MemoryTool::tool_id() const {
-    return "memory";
-}
-
-std::vector<std::string> MemoryTool::actions() const {
-    std::vector<std::string> acts;
-    // File operations (filesystem)
-    acts.push_back("file_save");
-    acts.push_back("file_get");
-    acts.push_back("file_list");
-    // Memory operations (database)
-    acts.push_back("memory_save");
-    acts.push_back("memory_search");
-    acts.push_back("memory_list");
-    acts.push_back("memory_delete");
-    // Task operations (database)
-    acts.push_back("task_create");
-    acts.push_back("task_complete");
-    acts.push_back("task_list");
-    return acts;
-}
-
-std::vector<AgentTool> MemoryTool::get_agent_tools() const {
-    std::vector<AgentTool> tools;
-    ToolProvider* self = const_cast<MemoryTool*>(this);
-    
-    // ================================================================
-    // FILE operations - read/write/list memory files on disk
-    // ================================================================
-    
-    // file_save - Write content to a memory file on disk
-    {
-        AgentTool tool;
-        tool.name = "file_save";
-        tool.description = "Write content to a memory file on disk. Use for markdown notes, daily logs, or any text file in the memory workspace.";
-        tool.params.push_back(ToolParamSchema("content", "string", "The content to write to the file", true));
-        tool.params.push_back(ToolParamSchema("filename", "string", "Optional filename (default: MEMORY.md)", false));
-        tool.params.push_back(ToolParamSchema("daily", "boolean", "If true, save to daily file (memory/YYYY-MM-DD.md)", false));
-        tool.params.push_back(ToolParamSchema("append", "boolean", "If true, append to existing file instead of overwriting", false));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("file_save", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            std::string msg = result.data.value("message", std::string("File saved"));
-            return AgentToolResult::ok(msg);
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // file_get - Read the content of a memory file from disk
-    {
-        AgentTool tool;
-        tool.name = "file_get";
-        tool.description = "Read the full content of a specific memory file from disk.";
-        tool.params.push_back(ToolParamSchema("path", "string", "Path to the memory file (e.g., 'MEMORY.md' or 'memory/2024-01-15.md')", true));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("file_get", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            if (result.data.contains("content") && result.data["content"].is_string()) {
-                return AgentToolResult::ok(result.data["content"].get<std::string>());
-            }
-            return AgentToolResult::ok(result.data.dump(2));
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // file_list - List all memory files on disk
-    {
-        AgentTool tool;
-        tool.name = "file_list";
-        tool.description = "List all memory files on disk in the workspace.";
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("file_list", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            return AgentToolResult::ok(result.data.dump(2));
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // ================================================================
-    // MEMORY operations - structured entries in SQLite database
-    // ================================================================
-    
-    // memory_save - Save a structured memory entry to the database
-    {
-        AgentTool tool;
-        tool.name = "memory_save";
-        tool.description = "Save a structured memory entry to the database. Use for facts, preferences, or context that should persist across sessions. This is DATABASE storage, not file storage.";
-        tool.params.push_back(ToolParamSchema("content", "string", "The content to save to memory", true));
-        tool.params.push_back(ToolParamSchema("category", "string", "Category: general, resume, fact, preference (default: general)", false));
-        tool.params.push_back(ToolParamSchema("importance", "number", "Importance 1-10 (default: 5)", false));
-        tool.params.push_back(ToolParamSchema("tags", "string", "Comma-separated tags for search", false));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("memory_save", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            std::string msg = result.data.value("message", std::string("Memory saved"));
-            return AgentToolResult::ok(msg);
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // memory_search - Search structured memories in the database
-    {
-        AgentTool tool;
-        tool.name = "memory_search";
-        tool.description = "Search through structured memory entries in the database. Returns entries ranked by importance and relevance.";
-        tool.params.push_back(ToolParamSchema("query", "string", "Search query - keywords or natural language", true));
-        tool.params.push_back(ToolParamSchema("max_results", "number", "Maximum number of results (default: 10)", false));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("memory_search", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            return AgentToolResult::ok(result.data.dump(2));
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // memory_list - List structured memory entries from the database
-    {
-        AgentTool tool;
-        tool.name = "memory_list";
-        tool.description = "List structured memory entries from the database, optionally filtered by category.";
-        tool.params.push_back(ToolParamSchema("category", "string", "Filter by category (empty = all)", false));
-        tool.params.push_back(ToolParamSchema("limit", "number", "Maximum entries to return (default: 100)", false));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("memory_list", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            return AgentToolResult::ok(result.data.dump(2));
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // memory_delete - Delete a structured memory entry from the database
-    {
-        AgentTool tool;
-        tool.name = "memory_delete";
-        tool.description = "Delete a structured memory entry from the database by its ID.";
-        tool.params.push_back(ToolParamSchema("id", "string", "The memory entry ID to delete", true));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("memory_delete", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            std::string msg = result.data.value("message", std::string("Memory deleted"));
-            return AgentToolResult::ok(msg);
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // ================================================================
-    // TASK operations - task/reminder management in SQLite database
-    // ================================================================
-    
-    // task_create - Create a task or reminder
-    {
-        AgentTool tool;
-        tool.name = "task_create";
-        tool.description = "Create a task or reminder for later. Tasks persist across sessions in the database.";
-        tool.params.push_back(ToolParamSchema("content", "string", "The task description", true));
-        tool.params.push_back(ToolParamSchema("context", "string", "Additional context or notes", false));
-        tool.params.push_back(ToolParamSchema("due_at", "number", "Due date as Unix timestamp in milliseconds (0 = no due date)", false));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("task_create", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            return AgentToolResult::ok(result.data.dump(2));
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // task_complete - Mark a task as completed
-    {
-        AgentTool tool;
-        tool.name = "task_complete";
-        tool.description = "Mark a task as completed by its ID.";
-        tool.params.push_back(ToolParamSchema("task_id", "string", "The task ID to mark as complete", true));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("task_complete", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            std::string msg = result.data.value("message", std::string("Task completed"));
-            return AgentToolResult::ok(msg);
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    // task_list - List all tasks
-    {
-        AgentTool tool;
-        tool.name = "task_list";
-        tool.description = "List all tasks from the database. Shows pending tasks by default.";
-        tool.params.push_back(ToolParamSchema("include_completed", "boolean", "Whether to include completed tasks (default: false)", false));
-        
-        tool.execute = [self](const Json& params) -> AgentToolResult {
-            ToolResult result = self->execute("task_list", params);
-            if (!result.success) {
-                return AgentToolResult::fail(result.error);
-            }
-            return AgentToolResult::ok(result.data.dump(2));
-        };
-        
-        tools.push_back(tool);
-    }
-    
-    return tools;
-}
+// ============================================================================
+// Plugin Interface
+// ============================================================================
 
 bool MemoryTool::init(const Config& cfg) {
-    if (initialized_) {
-        return true;
-    }
+    workspace_dir_ = cfg.get_string("workspace_dir", ".");
     
-    config_.workspace_dir = cfg.get_string("workspace_dir", ".");
-    config_.db_path = cfg.get_string("memory_db_path", "");
-    config_.chunking.target_tokens = cfg.get_int("memory_chunk_tokens", 400);
-    config_.chunking.overlap_tokens = cfg.get_int("memory_chunk_overlap", 80);
-    config_.search.max_results = cfg.get_int("memory_max_results", 10);
-    config_.search.min_score = 0.1;
-    
-    manager_.reset(new MemoryManager(config_));
-    
-    if (!manager_->initialize()) {
+    if (!manager_.init(cfg)) {
+        LOG_ERROR("[MemoryTool] Failed to initialize memory manager");
         return false;
     }
     
-    manager_->sync();
-    
     initialized_ = true;
+    LOG_INFO("[MemoryTool] Initialized (workspace=%s)", workspace_dir_.c_str());
     return true;
 }
 
 void MemoryTool::shutdown() {
-    if (manager_) {
-        manager_->shutdown();
-        manager_.reset();
+    if (initialized_) {
+        manager_.shutdown();
+        initialized_ = false;
     }
-    initialized_ = false;
 }
 
-Json MemoryTool::get_tool_schema() const {
-    Json tools = Json::array();
-    
-    // ================================================================
-    // FILE operations schema
-    // ================================================================
-    
-    // file_save
-    {
-        Json tool;
-        tool["name"] = "file_save";
-        tool["description"] = "Write content to a memory file on disk.";
-        
-        Json params;
-        params["type"] = "object";
-        
-        Json props;
-        { Json p; p["type"] = "string"; p["description"] = "The content to write to the file"; props["content"] = p; }
-        { Json p; p["type"] = "string"; p["description"] = "Optional filename (default: MEMORY.md)"; props["filename"] = p; }
-        { Json p; p["type"] = "boolean"; p["description"] = "If true, save to daily file (memory/YYYY-MM-DD.md)"; props["daily"] = p; }
-        { Json p; p["type"] = "boolean"; p["description"] = "If true, append instead of overwriting"; props["append"] = p; }
-        
-        params["properties"] = props;
-        Json required = Json::array();
-        required.push_back("content");
-        params["required"] = required;
-        tool["parameters"] = params;
-        tools.push_back(tool);
+// ============================================================================
+// ToolProvider Interface
+// ============================================================================
+
+std::vector<std::string> MemoryTool::actions() const {
+    std::vector<std::string> acts;
+    acts.push_back("memory_save");
+    acts.push_back("memory_search");
+    acts.push_back("memory_get");
+    acts.push_back("file_save");
+    acts.push_back("file_read");
+    acts.push_back("task_create");
+    acts.push_back("task_list");
+    acts.push_back("task_complete");
+    return acts;
+}
+
+ToolResult MemoryTool::execute(const std::string& action, const Json& params) {
+    if (!initialized_) {
+        return ToolResult::fail("Memory tool not initialized");
     }
     
-    // file_get
-    {
-        Json tool;
-        tool["name"] = "file_get";
-        tool["description"] = "Read the full content of a specific memory file from disk.";
-        
-        Json params;
-        params["type"] = "object";
-        Json props;
-        { Json p; p["type"] = "string"; p["description"] = "Path to the memory file (e.g., 'MEMORY.md')"; props["path"] = p; }
-        params["properties"] = props;
-        Json required = Json::array();
-        required.push_back("path");
-        params["required"] = required;
-        tool["parameters"] = params;
-        tools.push_back(tool);
-    }
+    if (action == "memory_save")   return do_memory_save(params);
+    if (action == "memory_search") return do_memory_search(params);
+    if (action == "memory_get")    return do_memory_get(params);
+    if (action == "file_save")     return do_file_save(params);
+    if (action == "file_read")     return do_file_read(params);
+    if (action == "task_create")   return do_task_create(params);
+    if (action == "task_list")     return do_task_list(params);
+    if (action == "task_complete") return do_task_complete(params);
     
-    // file_list
-    {
-        Json tool;
-        tool["name"] = "file_list";
-        tool["description"] = "List all memory files on disk.";
-        Json params;
-        params["type"] = "object";
-        params["properties"] = Json::object();
-        tool["parameters"] = params;
-        tools.push_back(tool);
-    }
-    
-    // ================================================================
-    // MEMORY operations schema (DATABASE)
-    // ================================================================
+    return ToolResult::fail("Unknown action: " + action);
+}
+
+// ============================================================================
+// Agent Tool Definitions
+// ============================================================================
+
+std::vector<AgentTool> MemoryTool::get_agent_tools() const {
+    std::vector<AgentTool> tools;
+    MemoryTool* self = const_cast<MemoryTool*>(this);
     
     // memory_save
     {
-        Json tool;
-        tool["name"] = "memory_save";
-        tool["description"] = "Save a structured memory entry to the database.";
-        
-        Json params;
-        params["type"] = "object";
-        Json props;
-        { Json p; p["type"] = "string"; p["description"] = "The content to save"; props["content"] = p; }
-        { Json p; p["type"] = "string"; p["description"] = "Category: general, resume, fact, preference"; props["category"] = p; }
-        { Json p; p["type"] = "integer"; p["description"] = "Importance 1-10 (default: 5)"; props["importance"] = p; }
-        { Json p; p["type"] = "string"; p["description"] = "Comma-separated tags for search"; props["tags"] = p; }
-        params["properties"] = props;
-        Json required = Json::array();
-        required.push_back("content");
-        params["required"] = required;
-        tool["parameters"] = params;
+        AgentTool tool;
+        tool.name = "memory_save";
+        tool.description = 
+            "Save important information to persistent memory database. "
+            "Use this to remember facts, user preferences, decisions, "
+            "conversation summaries, or anything that should persist across sessions. "
+            "Memories are searchable via BM25 full-text search.";
+        tool.params.push_back(ToolParamSchema(
+            "content", "string",
+            "The information to save. Be specific and include relevant context.",
+            true
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "category", "string",
+            "Category for organization (e.g., 'general', 'resume', 'note', 'preference', 'fact'). Default: 'general'",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "importance", "number",
+            "Importance level 1-10. Higher values are prioritized in search. Default: 5",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "tags", "string",
+            "Comma-separated tags for filtering (e.g., 'user,preference,language')",
+            false
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_memory_save(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "Memory saved")
+                : AgentToolResult::fail(r.error);
+        };
         tools.push_back(tool);
     }
     
     // memory_search
     {
-        Json tool;
-        tool["name"] = "memory_search";
-        tool["description"] = "Search structured memory entries in the database.";
-        
-        Json params;
-        params["type"] = "object";
-        Json props;
-        { Json p; p["type"] = "string"; p["description"] = "Search query"; props["query"] = p; }
-        { Json p; p["type"] = "integer"; p["description"] = "Maximum number of results (default: 10)"; props["max_results"] = p; }
-        params["properties"] = props;
-        Json required = Json::array();
-        required.push_back("query");
-        params["required"] = required;
-        tool["parameters"] = params;
+        AgentTool tool;
+        tool.name = "memory_search";
+        tool.description = 
+            "Search persistent memory using full-text search (BM25 ranking). "
+            "Use this to recall past information, find saved notes, "
+            "or look up things from previous conversations.";
+        tool.params.push_back(ToolParamSchema(
+            "query", "string",
+            "Search query. Uses natural language keywords.",
+            true
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "max_results", "number",
+            "Maximum number of results to return (default: 5)",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "category", "string",
+            "Filter by category (optional)",
+            false
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_memory_search(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "No results")
+                : AgentToolResult::fail(r.error);
+        };
         tools.push_back(tool);
     }
     
-    // memory_list
+    // memory_get
     {
-        Json tool;
-        tool["name"] = "memory_list";
-        tool["description"] = "List structured memory entries from the database.";
-        
-        Json params;
-        params["type"] = "object";
-        Json props;
-        { Json p; p["type"] = "string"; p["description"] = "Filter by category (empty = all)"; props["category"] = p; }
-        { Json p; p["type"] = "integer"; p["description"] = "Maximum entries to return (default: 100)"; props["limit"] = p; }
-        params["properties"] = props;
-        tool["parameters"] = params;
+        AgentTool tool;
+        tool.name = "memory_get";
+        tool.description = 
+            "Get a specific memory by ID, or list recent memories. "
+            "Use without an ID to see what's been saved recently.";
+        tool.params.push_back(ToolParamSchema(
+            "id", "string",
+            "Memory ID to retrieve. If omitted, returns recent entries.",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "limit", "number",
+            "Number of recent entries to return (default: 5, only when id is not specified)",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "category", "string",
+            "Filter by category (optional, only when id is not specified)",
+            false
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_memory_get(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "No results")
+                : AgentToolResult::fail(r.error);
+        };
         tools.push_back(tool);
     }
     
-    // memory_delete
+    // file_save
     {
-        Json tool;
-        tool["name"] = "memory_delete";
-        tool["description"] = "Delete a structured memory entry from the database.";
-        
-        Json params;
-        params["type"] = "object";
-        Json props;
-        { Json p; p["type"] = "string"; p["description"] = "The memory entry ID to delete"; props["id"] = p; }
-        params["properties"] = props;
-        Json required = Json::array();
-        required.push_back("id");
-        params["required"] = required;
-        tool["parameters"] = params;
+        AgentTool tool;
+        tool.name = "file_save";
+        tool.description = 
+            "Save content to a file in the workspace memory directory. "
+            "Use for saving structured documents, notes, or daily logs. "
+            "Files are saved under the memory/ directory by default.";
+        tool.params.push_back(ToolParamSchema(
+            "content", "string",
+            "Content to write to the file",
+            true
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "path", "string",
+            "File path relative to workspace (default: auto-generated in memory/ directory)",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "daily", "boolean",
+            "If true, saves to a daily file (memory/YYYY-MM-DD.md). Default: false",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "append", "boolean",
+            "If true, append to existing file instead of overwriting. Default: false",
+            false
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_file_save(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "File saved")
+                : AgentToolResult::fail(r.error);
+        };
         tools.push_back(tool);
     }
     
-    // ================================================================
-    // TASK operations schema (DATABASE)
-    // ================================================================
+    // file_read
+    {
+        AgentTool tool;
+        tool.name = "file_read";
+        tool.description = 
+            "Read a file from the workspace memory directory.";
+        tool.params.push_back(ToolParamSchema(
+            "path", "string",
+            "File path relative to workspace",
+            true
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_file_read(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "")
+                : AgentToolResult::fail(r.error);
+        };
+        tools.push_back(tool);
+    }
     
     // task_create
     {
-        Json tool;
-        tool["name"] = "task_create";
-        tool["description"] = "Create a task or reminder.";
-        
-        Json params;
-        params["type"] = "object";
-        Json props;
-        { Json p; p["type"] = "string"; p["description"] = "The task description"; props["content"] = p; }
-        { Json p; p["type"] = "string"; p["description"] = "Additional context or notes"; props["context"] = p; }
-        { Json p; p["type"] = "integer"; p["description"] = "Due date as Unix timestamp in ms (0 = no due date)"; props["due_at"] = p; }
-        params["properties"] = props;
-        Json required = Json::array();
-        required.push_back("content");
-        params["required"] = required;
-        tool["parameters"] = params;
-        tools.push_back(tool);
-    }
-    
-    // task_complete
-    {
-        Json tool;
-        tool["name"] = "task_complete";
-        tool["description"] = "Mark a task as completed.";
-        
-        Json params;
-        params["type"] = "object";
-        Json props;
-        { Json p; p["type"] = "string"; p["description"] = "The task ID to complete"; props["task_id"] = p; }
-        params["properties"] = props;
-        Json required = Json::array();
-        required.push_back("task_id");
-        params["required"] = required;
-        tool["parameters"] = params;
+        AgentTool tool;
+        tool.name = "task_create";
+        tool.description = 
+            "Create a new task or reminder in the database. "
+            "Tasks persist across sessions and can have optional due dates.";
+        tool.params.push_back(ToolParamSchema(
+            "content", "string",
+            "Task description",
+            true
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "context", "string",
+            "Additional context or notes about the task",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "due_at", "number",
+            "Due date as Unix timestamp in milliseconds (0 = no due date)",
+            false
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_task_create(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "Task created")
+                : AgentToolResult::fail(r.error);
+        };
         tools.push_back(tool);
     }
     
     // task_list
     {
-        Json tool;
-        tool["name"] = "task_list";
-        tool["description"] = "List all tasks.";
-        
-        Json params;
-        params["type"] = "object";
-        Json props;
-        { Json p; p["type"] = "boolean"; p["description"] = "Whether to include completed tasks (default: false)"; props["include_completed"] = p; }
-        params["properties"] = props;
-        tool["parameters"] = params;
+        AgentTool tool;
+        tool.name = "task_list";
+        tool.description = 
+            "List tasks from the database. By default shows only active (incomplete) tasks.";
+        tool.params.push_back(ToolParamSchema(
+            "include_completed", "boolean",
+            "Include completed tasks (default: false)",
+            false
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_task_list(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "No tasks")
+                : AgentToolResult::fail(r.error);
+        };
+        tools.push_back(tool);
+    }
+    
+    // task_complete
+    {
+        AgentTool tool;
+        tool.name = "task_complete";
+        tool.description = 
+            "Mark a task as completed by its ID.";
+        tool.params.push_back(ToolParamSchema(
+            "id", "string",
+            "The task ID to mark as completed",
+            true
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_task_complete(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "Task completed")
+                : AgentToolResult::fail(r.error);
+        };
         tools.push_back(tool);
     }
     
     return tools;
-}
-
-ToolResult MemoryTool::execute(const std::string& action, const Json& params) {
-    if (!manager_) {
-        return ToolResult::fail("Memory tool not initialized");
-    }
-
-    Json response = execute_function(action, params);
-    ToolResult result;
-    result.data = response;
-
-    bool ok = response.value("success", false);
-    result.success = ok;
-    if (!ok) {
-        result.error = response.value("error", std::string("Unknown error"));
-    }
-
-    return result;
-}
-
-Json MemoryTool::execute_function(const std::string& function_name, const Json& params) {
-    if (!manager_) {
-        return make_error("Memory tool not initialized");
-    }
-    
-    // File operations (filesystem)
-    if (function_name == "file_save") {
-        return file_save(params);
-    } else if (function_name == "file_get") {
-        return file_get(params);
-    } else if (function_name == "file_list") {
-        return file_list(params);
-    }
-    // Memory operations (database)
-    else if (function_name == "memory_save") {
-        return memory_save(params);
-    } else if (function_name == "memory_search") {
-        return memory_search(params);
-    } else if (function_name == "memory_list") {
-        return memory_list(params);
-    } else if (function_name == "memory_delete") {
-        return memory_delete(params);
-    }
-    // Task operations (database)
-    else if (function_name == "task_create") {
-        return task_create(params);
-    } else if (function_name == "task_complete") {
-        return task_complete(params);
-    } else if (function_name == "task_list") {
-        return task_list(params);
-    }
-    
-    return make_error("Unknown function: " + function_name);
-}
-
-MemoryManager* MemoryTool::memory_manager() {
-    return manager_.get();
-}
-
-const MemoryManager* MemoryTool::memory_manager() const {
-    return manager_.get();
-}
-
-// ============================================================================
-// FILE operations - filesystem only
-// ============================================================================
-
-Json MemoryTool::file_save(const Json& params) {
-    std::string content = params.value("content", std::string(""));
-    if (content.empty()) {
-        return make_error("Content is required");
-    }
-    
-    bool daily = params.value("daily", false);
-    bool append = params.value("append", false);
-    std::string filename = params.value("filename", std::string(""));
-    
-    bool ok;
-    if (daily) {
-        ok = manager_->save_daily_memory(content);
-    } else if (append) {
-        std::string target = filename.empty() ? "MEMORY.md" : filename;
-        ok = manager_->append_to_memory(content, target);
-    } else {
-        ok = manager_->save_memory(content, filename);
-    }
-    
-    if (ok) {
-        return make_success("File saved successfully");
-    } else {
-        return make_error("Failed to save file: " + manager_->last_error());
-    }
-}
-
-Json MemoryTool::file_get(const Json& params) {
-    std::string path = params.value("path", std::string(""));
-    if (path.empty()) {
-        return make_error("Path is required");
-    }
-    
-    std::string content = manager_->get_memory_content(path);
-    
-    if (content.empty()) {
-        return make_error("File not found or empty: " + path);
-    }
-    
-    Json response;
-    response["success"] = true;
-    response["path"] = path;
-    response["content"] = content;
-    return response;
-}
-
-Json MemoryTool::file_list(const Json& params) {
-    (void)params;
-    
-    std::vector<std::string> files = manager_->list_memory_files();
-    
-    Json response;
-    response["success"] = true;
-    
-    Json items = Json::array();
-    for (const auto& f : files) {
-        items.push_back(f);
-    }
-    
-    response["files"] = items;
-    response["count"] = static_cast<int>(files.size());
-    return response;
-}
-
-// ============================================================================
-// MEMORY operations - DATABASE only (structured entries in SQLite)
-// ============================================================================
-
-Json MemoryTool::memory_save(const Json& params) {
-    std::string content = params.value("content", std::string(""));
-    if (content.empty()) {
-        return make_error("Content is required");
-    }
-    
-    std::string category = params.value("category", std::string("general"));
-    int importance = params.value("importance", 5);
-    std::string tags = params.value("tags", std::string(""));
-    
-    bool ok = manager_->save_structured_memory(content, category, tags, importance);
-    
-    if (ok) {
-        return make_success("Memory saved to database");
-    } else {
-        return make_error("Failed to save memory: " + manager_->last_error());
-    }
-}
-
-Json MemoryTool::memory_search(const Json& params) {
-    std::string query = params.value("query", std::string(""));
-    if (query.empty()) {
-        return make_error("Query is required");
-    }
-    
-    int max_results = params.value("max_results", 10);
-    
-    // DATABASE only - search structured memories
-    std::vector<MemoryEntry> memories = manager_->search_structured_memories(query, max_results);
-    
-    Json response;
-    response["success"] = true;
-    
-    Json items = Json::array();
-    for (const auto& m : memories) {
-        Json item;
-        item["id"] = m.id;
-        item["content"] = m.content;
-        item["category"] = m.category;
-        item["tags"] = m.tags;
-        item["importance"] = m.importance;
-        items.push_back(item);
-    }
-    
-    response["memories"] = items;
-    response["count"] = static_cast<int>(memories.size());
-    return response;
-}
-
-Json MemoryTool::memory_list(const Json& params) {
-    std::string category = params.value("category", std::string(""));
-    int limit = params.value("limit", 100);
-    
-    // DATABASE only - list structured memory entries
-    std::vector<MemoryEntry> memories = manager_->list_structured_memories(category, limit);
-    
-    Json response;
-    response["success"] = true;
-    
-    Json items = Json::array();
-    for (const auto& m : memories) {
-        Json item;
-        item["id"] = m.id;
-        item["content"] = m.content;
-        item["category"] = m.category;
-        item["tags"] = m.tags;
-        item["importance"] = m.importance;
-        items.push_back(item);
-    }
-    
-    response["memories"] = items;
-    response["count"] = static_cast<int>(memories.size());
-    return response;
-}
-
-Json MemoryTool::memory_delete(const Json& params) {
-    std::string id = params.value("id", std::string(""));
-    if (id.empty()) {
-        return make_error("Memory ID is required");
-    }
-    
-    if (manager_->delete_structured_memory(id)) {
-        return make_success("Memory deleted from database");
-    } else {
-        return make_error("Failed to delete memory");
-    }
-}
-
-// ============================================================================
-// TASK operations - DATABASE only
-// ============================================================================
-
-Json MemoryTool::task_create(const Json& params) {
-    std::string content = params.value("content", std::string(""));
-    if (content.empty()) {
-        return make_error("Content is required");
-    }
-    
-    std::string context = params.value("context", std::string(""));
-    std::string task_id = manager_->create_task(content, context);
-    
-    if (task_id.empty()) {
-        return make_error("Failed to create task");
-    }
-    
-    int64_t due_at = params.value("due_at", int64_t(0));
-    if (due_at > 0) {
-        manager_->update_task_due(task_id, due_at);
-    }
-    
-    Json response;
-    response["success"] = true;
-    response["task_id"] = task_id;
-    response["message"] = "Task created successfully";
-    return response;
-}
-
-Json MemoryTool::task_complete(const Json& params) {
-    std::string task_id = params.value("task_id", std::string(""));
-    if (task_id.empty()) {
-        return make_error("Task ID is required");
-    }
-    
-    if (manager_->complete_task(task_id)) {
-        return make_success("Task completed successfully");
-    } else {
-        return make_error("Failed to complete task");
-    }
-}
-
-Json MemoryTool::task_list(const Json& params) {
-    bool include_completed = params.value("include_completed", false);
-    
-    std::vector<MemoryTask> tasks = manager_->list_tasks(include_completed);
-    
-    Json response;
-    response["success"] = true;
-    
-    Json items = Json::array();
-    for (const auto& t : tasks) {
-        Json item;
-        item["id"] = t.id;
-        item["content"] = t.content;
-        item["context"] = t.context;
-        item["created_at"] = static_cast<int>(t.created_at);
-        item["due_at"] = static_cast<int>(t.due_at);
-        item["completed"] = t.completed;
-        if (t.completed) {
-            item["completed_at"] = static_cast<int>(t.completed_at);
-        }
-        items.push_back(item);
-    }
-    
-    response["tasks"] = items;
-    response["count"] = static_cast<int>(tasks.size());
-    return response;
 }
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-Json MemoryTool::make_error(const std::string& message) {
-    Json response;
-    response["success"] = false;
-    response["error"] = message;
-    return response;
+std::string MemoryTool::resolve_path(const std::string& path) const {
+    if (path.empty()) return workspace_dir_;
+    
+    // Absolute path
+    if (path[0] == '/' || (path.size() > 1 && path[1] == ':')) {
+        return path;
+    }
+    
+    // Relative path
+    if (workspace_dir_.empty() || workspace_dir_ == ".") {
+        return path;
+    }
+    
+    return workspace_dir_ + "/" + path;
 }
 
-Json MemoryTool::make_success(const std::string& message) {
-    Json response;
-    response["success"] = true;
-    response["message"] = message;
-    return response;
+bool MemoryTool::ensure_parent_dir(const std::string& filepath) const {
+    // Find last '/' to get directory
+    size_t pos = filepath.rfind('/');
+    if (pos == std::string::npos) return true; // No directory component
+    
+    std::string dir = filepath.substr(0, pos);
+    
+    // Simple recursive mkdir
+    std::string current;
+    for (size_t i = 0; i < dir.size(); ++i) {
+        current += dir[i];
+        if (dir[i] == '/' || i == dir.size() - 1) {
+            struct stat st;
+            if (stat(current.c_str(), &st) != 0) {
+                if (mkdir(current.c_str(), 0755) != 0 && errno != EEXIST) {
+                    return false;
+                }
+            }
+        }
+    }
+    
+    return true;
+}
+
+std::string MemoryTool::daily_file_path() const {
+    time_t now = time(nullptr);
+    struct tm* tm_info = localtime(&now);
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%d", tm_info);
+    return "memory/" + std::string(buf) + ".md";
+}
+
+// ============================================================================
+// Memory Actions (Database Read/Write)
+// ============================================================================
+
+ToolResult MemoryTool::do_memory_save(const Json& params) {
+    if (!params.contains("content") || !params["content"].is_string()) {
+        return ToolResult::fail("Missing required parameter: content");
+    }
+    
+    std::string content = params["content"].get<std::string>();
+    std::string category = "general";
+    int importance = 5;
+    std::string tags;
+    
+    if (params.contains("category") && params["category"].is_string()) {
+        category = params["category"].get<std::string>();
+    }
+    if (params.contains("importance") && params["importance"].is_number()) {
+        importance = params["importance"].get<int>();
+    } else if (params.contains("importance") && params["importance"].is_string()) {
+        try { importance = std::stoi(params["importance"].get<std::string>()); } 
+        catch (...) {}
+    }
+    if (params.contains("tags") && params["tags"].is_string()) {
+        tags = params["tags"].get<std::string>();
+    }
+    
+    std::string result = manager_.save_memory(content, category, importance, tags);
+    
+    if (!result.empty()) {
+        Json data;
+        data["output"] = "Memory saved successfully (category: " + category + 
+                          ", importance: " + std::to_string(importance) + ")";
+        return ToolResult::ok(data);
+    }
+    
+    return ToolResult::fail("Failed to save memory");
+}
+
+ToolResult MemoryTool::do_memory_search(const Json& params) {
+    if (!params.contains("query") || !params["query"].is_string()) {
+        return ToolResult::fail("Missing required parameter: query");
+    }
+    
+    std::string query = params["query"].get<std::string>();
+    int max_results = 5;
+    std::string category;
+    
+    if (params.contains("max_results") && params["max_results"].is_number()) {
+        max_results = params["max_results"].get<int>();
+    } else if (params.contains("max_results") && params["max_results"].is_string()) {
+        try { max_results = std::stoi(params["max_results"].get<std::string>()); }
+        catch (...) {}
+    }
+    if (params.contains("category") && params["category"].is_string()) {
+        category = params["category"].get<std::string>();
+    }
+    
+    auto hits = manager_.search(query, max_results, category);
+    
+    // Build output text and structured data
+    std::ostringstream out;
+    Json data;
+    Json memories = Json::array();
+    
+    if (hits.empty()) {
+        out << "No memories found matching: " << query;
+    } else {
+        out << "Found " << hits.size() << " result(s) for: " << query << "\n\n";
+        
+        for (size_t i = 0; i < hits.size(); ++i) {
+            const auto& hit = hits[i];
+            
+            out << "--- Result " << (i + 1) << " ---\n";
+            out << "ID: " << hit.entry.id << "\n";
+            out << "Category: " << hit.entry.category << "\n";
+            if (!hit.entry.tags.empty()) {
+                out << "Tags: " << hit.entry.tags << "\n";
+            }
+            out << "Content: " << hit.entry.content << "\n\n";
+            
+            // Structured data for programmatic access (used by context_manager)
+            Json mem;
+            mem["id"] = hit.entry.id;
+            mem["content"] = hit.entry.content;
+            mem["category"] = hit.entry.category;
+            mem["tags"] = hit.entry.tags;
+            mem["importance"] = hit.entry.importance;
+            mem["score"] = hit.score;
+            memories.push_back(mem);
+        }
+    }
+    
+    data["output"] = out.str();
+    data["memories"] = memories;
+    return ToolResult::ok(data);
+}
+
+ToolResult MemoryTool::do_memory_get(const Json& params) {
+    // If ID is provided, get specific memory
+    if (params.contains("id") && params["id"].is_string()) {
+        std::string id = params["id"].get<std::string>();
+        auto entry = manager_.get_memory(id);
+        
+        if (entry.id.empty()) {
+            return ToolResult::fail("Memory not found: " + id);
+        }
+        
+        std::ostringstream out;
+        out << "ID: " << entry.id << "\n";
+        out << "Category: " << entry.category << "\n";
+        if (!entry.tags.empty()) {
+            out << "Tags: " << entry.tags << "\n";
+        }
+        out << "Importance: " << entry.importance << "\n";
+        out << "Content:\n" << entry.content;
+        
+        Json data;
+        data["output"] = out.str();
+        
+        Json mem;
+        mem["id"] = entry.id;
+        mem["content"] = entry.content;
+        mem["category"] = entry.category;
+        mem["tags"] = entry.tags;
+        mem["importance"] = entry.importance;
+        
+        Json memories = Json::array();
+        memories.push_back(mem);
+        data["memories"] = memories;
+        
+        return ToolResult::ok(data);
+    }
+    
+    // Otherwise, get recent memories
+    int limit = 5;
+    std::string category;
+    
+    if (params.contains("limit") && params["limit"].is_number()) {
+        limit = params["limit"].get<int>();
+    }
+    if (params.contains("category") && params["category"].is_string()) {
+        category = params["category"].get<std::string>();
+    }
+    
+    auto entries = manager_.get_recent(limit, category);
+    
+    std::ostringstream out;
+    Json data;
+    Json memories = Json::array();
+    
+    if (entries.empty()) {
+        out << "No memories found.";
+    } else {
+        out << "Recent memories (" << entries.size() << "):\n\n";
+        
+        for (size_t i = 0; i < entries.size(); ++i) {
+            const auto& entry = entries[i];
+            out << "--- " << (i + 1) << " ---\n";
+            out << "ID: " << entry.id << "\n";
+            out << "Category: " << entry.category << "\n";
+            
+            // Truncate long content for listing
+            std::string preview = entry.content;
+            if (preview.size() > 200) {
+                preview = preview.substr(0, 200) + "...";
+            }
+            out << "Content: " << preview << "\n\n";
+            
+            Json mem;
+            mem["id"] = entry.id;
+            mem["content"] = entry.content;
+            mem["category"] = entry.category;
+            mem["tags"] = entry.tags;
+            mem["importance"] = entry.importance;
+            memories.push_back(mem);
+        }
+    }
+    
+    data["output"] = out.str();
+    data["memories"] = memories;
+    return ToolResult::ok(data);
+}
+
+// ============================================================================
+// File Actions (Workspace Filesystem)
+// ============================================================================
+
+ToolResult MemoryTool::do_file_save(const Json& params) {
+    if (!params.contains("content") || !params["content"].is_string()) {
+        return ToolResult::fail("Missing required parameter: content");
+    }
+    
+    std::string content = params["content"].get<std::string>();
+    std::string path;
+    bool daily = false;
+    bool append = false;
+    
+    if (params.contains("daily")) {
+        if (params["daily"].is_boolean()) {
+            daily = params["daily"].get<bool>();
+        } else if (params["daily"].is_string()) {
+            daily = (params["daily"].get<std::string>() == "true");
+        }
+    }
+    
+    if (params.contains("append")) {
+        if (params["append"].is_boolean()) {
+            append = params["append"].get<bool>();
+        } else if (params["append"].is_string()) {
+            append = (params["append"].get<std::string>() == "true");
+        }
+    }
+    
+    if (daily) {
+        path = daily_file_path();
+    } else if (params.contains("path") && params["path"].is_string()) {
+        path = params["path"].get<std::string>();
+    } else {
+        // Auto-generate a filename in memory/
+        time_t now = time(nullptr);
+        char buf[64];
+        strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", localtime(&now));
+        path = "memory/" + std::string(buf) + ".md";
+    }
+    
+    // Prevent directory traversal
+    if (path.find("..") != std::string::npos) {
+        return ToolResult::fail("Path not allowed: " + path);
+    }
+    
+    std::string full_path = resolve_path(path);
+    
+    // Sandbox check
+    auto& sandbox = Sandbox::instance();
+    if (sandbox.is_active() && !sandbox.is_path_allowed(full_path)) {
+        return ToolResult::fail("Path not allowed by sandbox: " + path);
+    }
+    
+    // Ensure parent directory exists
+    if (!ensure_parent_dir(full_path)) {
+        return ToolResult::fail("Cannot create directory for: " + path);
+    }
+    
+    // Open file
+    std::ios_base::openmode mode = std::ios::out;
+    if (append) {
+        mode |= std::ios::app;
+    }
+    
+    std::ofstream file(full_path.c_str(), mode);
+    if (!file.is_open()) {
+        return ToolResult::fail("Cannot open file for writing: " + path);
+    }
+    
+    if (append) {
+        file << "\n\n---\n\n";
+    }
+    file << content;
+    file.close();
+    
+    LOG_DEBUG("[MemoryTool] File saved: %s (%zu bytes, append=%s)",
+              path.c_str(), content.size(), append ? "true" : "false");
+    
+    Json data;
+    data["output"] = "File saved: " + path + " (" + std::to_string(content.size()) + " bytes)";
+    data["path"] = path;
+    return ToolResult::ok(data);
+}
+
+ToolResult MemoryTool::do_file_read(const Json& params) {
+    if (!params.contains("path") || !params["path"].is_string()) {
+        return ToolResult::fail("Missing required parameter: path");
+    }
+    
+    std::string path = params["path"].get<std::string>();
+    
+    // Prevent directory traversal
+    if (path.find("..") != std::string::npos) {
+        return ToolResult::fail("Path not allowed: " + path);
+    }
+    
+    std::string full_path = resolve_path(path);
+    
+    // Sandbox check
+    auto& sandbox = Sandbox::instance();
+    if (sandbox.is_active() && !sandbox.is_path_allowed(full_path)) {
+        return ToolResult::fail("Path not allowed by sandbox: " + path);
+    }
+    
+    std::ifstream file(full_path.c_str());
+    if (!file.is_open()) {
+        return ToolResult::fail("Cannot open file: " + path);
+    }
+    
+    std::ostringstream content;
+    content << file.rdbuf();
+    file.close();
+    
+    std::string result = content.str();
+    
+    // Truncate very large files
+    constexpr size_t MAX_SIZE = 50000;
+    if (result.size() > MAX_SIZE) {
+        result = result.substr(0, MAX_SIZE) + "\n\n... [truncated, file too large] ...";
+    }
+    
+    Json data;
+    data["output"] = result;
+    return ToolResult::ok(data);
+}
+
+// ============================================================================
+// Task Actions (Database Read/Write)
+// ============================================================================
+
+ToolResult MemoryTool::do_task_create(const Json& params) {
+    if (!params.contains("content") || !params["content"].is_string()) {
+        return ToolResult::fail("Missing required parameter: content");
+    }
+    
+    std::string content = params["content"].get<std::string>();
+    std::string context;
+    int64_t due_at = 0;
+    std::string channel;
+    std::string user_id;
+    
+    if (params.contains("context") && params["context"].is_string()) {
+        context = params["context"].get<std::string>();
+    }
+    if (params.contains("due_at") && params["due_at"].is_number()) {
+        due_at = params["due_at"].get<int64_t>();
+    }
+    if (params.contains("channel") && params["channel"].is_string()) {
+        channel = params["channel"].get<std::string>();
+    }
+    if (params.contains("user_id") && params["user_id"].is_string()) {
+        user_id = params["user_id"].get<std::string>();
+    }
+    
+    std::string result = manager_.create_task(content, context, due_at, channel, user_id);
+    
+    if (!result.empty()) {
+        std::ostringstream out;
+        out << "Task created: " << content;
+        if (due_at > 0) {
+            time_t due_sec = static_cast<time_t>(due_at / 1000);
+            char buf[64];
+            strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", localtime(&due_sec));
+            out << " (due: " << buf << ")";
+        }
+        
+        Json data;
+        data["output"] = out.str();
+        return ToolResult::ok(data);
+    }
+    
+    return ToolResult::fail("Failed to create task");
+}
+
+ToolResult MemoryTool::do_task_list(const Json& params) {
+    bool include_completed = false;
+    std::string channel;
+    
+    if (params.contains("include_completed")) {
+        if (params["include_completed"].is_boolean()) {
+            include_completed = params["include_completed"].get<bool>();
+        } else if (params["include_completed"].is_string()) {
+            include_completed = (params["include_completed"].get<std::string>() == "true");
+        }
+    }
+    if (params.contains("channel") && params["channel"].is_string()) {
+        channel = params["channel"].get<std::string>();
+    }
+    
+    auto tasks = manager_.list_tasks(include_completed, channel);
+    
+    std::ostringstream out;
+    
+    if (tasks.empty()) {
+        out << "No tasks found.";
+    } else {
+        // Check for overdue
+        auto due_tasks = manager_.get_due_tasks();
+        
+        if (!due_tasks.empty()) {
+            out << "⚠ OVERDUE TASKS (" << due_tasks.size() << "):\n";
+            for (size_t i = 0; i < due_tasks.size(); ++i) {
+                time_t due_sec = static_cast<time_t>(due_tasks[i].due_at / 1000);
+                char buf[64];
+                strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", localtime(&due_sec));
+                out << "  [" << due_tasks[i].id.substr(0, 8) << "] " 
+                    << due_tasks[i].content << " (due: " << buf << ")\n";
+            }
+            out << "\n";
+        }
+        
+        out << "Tasks (" << tasks.size() << "):\n\n";
+        
+        for (size_t i = 0; i < tasks.size(); ++i) {
+            const auto& task = tasks[i];
+            
+            out << (task.completed ? "[✓] " : "[ ] ");
+            out << "[" << task.id.substr(0, 8) << "] ";
+            out << task.content;
+            
+            if (task.due_at > 0) {
+                time_t due_sec = static_cast<time_t>(task.due_at / 1000);
+                char buf[64];
+                strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", localtime(&due_sec));
+                out << " (due: " << buf << ")";
+            }
+            
+            if (!task.context.empty()) {
+                out << "\n    Notes: " << task.context;
+            }
+            
+            out << "\n";
+        }
+    }
+    
+    Json data;
+    data["output"] = out.str();
+    return ToolResult::ok(data);
+}
+
+ToolResult MemoryTool::do_task_complete(const Json& params) {
+    if (!params.contains("id") || !params["id"].is_string()) {
+        return ToolResult::fail("Missing required parameter: id");
+    }
+    
+    std::string id = params["id"].get<std::string>();
+    
+    // Try to find the task first (support short IDs)
+    auto task = manager_.get_task(id);
+    
+    // If exact match not found, try to match by prefix
+    if (task.id.empty()) {
+        auto all_tasks = manager_.list_tasks(false);
+        for (size_t i = 0; i < all_tasks.size(); ++i) {
+            if (all_tasks[i].id.substr(0, id.size()) == id) {
+                task = all_tasks[i];
+                id = task.id; // Use full ID
+                break;
+            }
+        }
+    }
+    
+    if (task.id.empty()) {
+        return ToolResult::fail("Task not found: " + id);
+    }
+    
+    if (task.completed) {
+        Json data;
+        data["output"] = "Task already completed: " + task.content;
+        return ToolResult::ok(data);
+    }
+    
+    if (manager_.complete_task(id)) {
+        Json data;
+        data["output"] = "Task completed: " + task.content;
+        return ToolResult::ok(data);
+    }
+    
+    return ToolResult::fail("Failed to complete task: " + id);
 }
 
 } // namespace opencrank

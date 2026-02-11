@@ -351,6 +351,12 @@ std::string Agent::build_tools_prompt() const {
     oss << "You'll see a message like 'Stored as chunk_N with X chunks'. Refer to the chunking tools to work with this content.\n";
     oss << "This allows you to work/filter/scan large web pages, files, or command outputs.\n\n";
 
+    oss << "### User Notifications\n";
+    oss << "Use 'notify_user' to tell the user what you're about to do BEFORE doing it, ";
+    oss << "but only for significant actions. Good uses: starting a complex multi-step task, or when something failed and it was not expected. ";
+    oss << "warning about something important, or sharing a key finding. ";
+    oss << "Do NOT notify for every small step - one or two notifications per request is ideal.\n\n";
+
     oss << "### Tools:\n\n";
     
     for (std::map<std::string, AgentTool>::const_iterator it = tools_.begin();
@@ -571,42 +577,6 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
     LOG_INFO("[Agent] ▶ TOOL Executing: %s", call.tool_name.c_str());
     LOG_DEBUG("[Agent] ▶ TOOL Params: %s", effective_call.params.dump().c_str());
     LOG_DEBUG("[Agent] ▶ TOOL Raw content: %s", effective_call.raw_content.c_str());
-    
-    // Send debug message to chat if debug logging is enabled
-    if (!channel_id_.empty() && !chat_id_.empty() && 
-        Logger::instance().level() == LogLevel::DEBUG) {
-        
-        auto& app = Application::instance();
-        auto* channel = app.registry().get_channel(channel_id_);
-        
-        if (channel) {
-            std::ostringstream debug_msg;
-            debug_msg << "🔧 **Tool Call [DEBUG]**\n";
-            debug_msg << "Tool: `" << call.tool_name << "`\n";
-            debug_msg << "Arguments:\n```json\n";
-            
-            // Log the raw parameters before formatting
-            LOG_DEBUG("[Agent] Raw params before dump: %s", effective_call.params.dump().c_str());
-            
-            // Check if parameters are empty and log more information
-            if (effective_call.params.is_null() || effective_call.params.empty()) {
-                LOG_DEBUG("[Agent] WARNING: Parameters are empty or null!");
-                LOG_DEBUG("[Agent] Call valid status: %s", effective_call.valid ? "true" : "false");
-                LOG_DEBUG("[Agent] Call raw content: %s", effective_call.raw_content.c_str());
-            }
-            
-            // Format with proper indentation
-            debug_msg << effective_call.params.dump(2);
-            debug_msg << "\n```";
-            
-            // Log the debug message content for debugging
-            LOG_DEBUG("[Agent] Debug message content: %s", debug_msg.str().c_str());
-            
-            channel->send_message(chat_id_, debug_msg.str());
-            LOG_DEBUG("[Agent] Sent debug tool call message to %s:%s", 
-                      channel_id_.c_str(), chat_id_.c_str());
-        }
-    }
     
     try {
         // Log parameters just before execution
@@ -830,13 +800,7 @@ AgentResult Agent::run(
     const std::string& user_message,
     std::vector<ConversationMessage>& history,
     const std::string& system_prompt,
-    const AgentConfig& config,
-    const std::string& channel_id,
-    const std::string& chat_id) {
-    
-    // Store context for debug messages
-    channel_id_ = channel_id;
-    chat_id_ = chat_id;
+    const AgentConfig& config) {
     
     AgentResult result;
     result.iterations = 0;

@@ -1,20 +1,27 @@
 /*
- * opencrank C++11 - Memory Tool (Core)
+ * opencrank C++11 - Memory Tool
  * 
- * Clean separation of concerns:
- *   file_*   actions → FILE operations (read/write/list memory files)
- *   memory_* actions → DATABASE operations (structured memory entries in SQLite)
- *   task_*   actions → DATABASE operations (task/reminder management in SQLite)
- *
- * Part of core functionality for use by other plugins.
+ * ToolProvider that exposes memory, file, and task operations to the agent.
+ * 
+ * Agent-facing actions:
+ *   memory_save    - Save information to persistent database
+ *   memory_search  - Search memories using BM25 full-text search
+ *   memory_get     - Retrieve a specific memory or recent entries
+ *   file_save      - Save content to a file in the workspace
+ *   file_read      - Read a file from the workspace
+ *   task_create    - Create a new task/reminder
+ *   task_list      - List active tasks
+ *   task_complete  - Mark a task as completed
+ * 
+ * Memory and tasks are ONLY database read/write.
+ * File operations use the workspace filesystem.
  */
 #ifndef opencrank_CORE_MEMORY_TOOL_HPP
 #define opencrank_CORE_MEMORY_TOOL_HPP
 
-#include <opencrank/core/tool.hpp>
-#include <opencrank/core/agent.hpp>
+#include "tool.hpp"
+#include "agent.hpp"
 #include <opencrank/memory/manager.hpp>
-#include <memory>
 #include <string>
 
 namespace opencrank {
@@ -22,59 +29,52 @@ namespace opencrank {
 class MemoryTool : public ToolProvider {
 public:
     MemoryTool();
-    ~MemoryTool();
+    virtual ~MemoryTool();
     
-    // Lifecycle
-    bool init(const Config& cfg);
-    void shutdown();
-    bool is_initialized() const { return initialized_; }
+    // Plugin interface
+    const char* name() const override { return "memory"; }
+    const char* description() const override {
+        return "Persistent memory, file, and task management tools";
+    }
+    const char* version() const override { return "1.0.0"; }
     
-    // Metadata
-    const char* name() const;
-    const char* description() const;
-    const char* version() const;
-
-    // Tool interface
-    const char* tool_id() const;
-    std::vector<std::string> actions() const;
+    bool init(const Config& cfg) override;
+    void shutdown() override;
+    
+    // ToolProvider interface
+    const char* tool_id() const override { return "memory"; }
+    std::vector<std::string> actions() const override;
+    ToolResult execute(const std::string& action, const Json& params) override;
     
     // Agent tools with detailed descriptions
-    std::vector<AgentTool> get_agent_tools() const;
+    std::vector<AgentTool> get_agent_tools() const override;
+    
+    // Access to the underlying manager
+    MemoryManager& manager() { return manager_; }
+    const MemoryManager& manager() const { return manager_; }
 
-    ToolResult execute(const std::string& action, const Json& params);
-    
-    // Tool schema for AI function calling
-    Json get_tool_schema() const;
-    
-    // Execute tool call (internal)
-    Json execute_function(const std::string& function_name, const Json& params);
-    
-    // Direct access to memory manager for other core components
-    MemoryManager* memory_manager();
-    const MemoryManager* memory_manager() const;
-    
 private:
-    std::unique_ptr<MemoryManager> manager_;
-    MemoryConfig config_;
+    MemoryManager manager_;
+    std::string workspace_dir_;
     
-    // ---- FILE operations (read/write/list memory files) ----
-    Json file_save(const Json& params);
-    Json file_get(const Json& params);
-    Json file_list(const Json& params);
+    // Tool action implementations
+    ToolResult do_memory_save(const Json& params);
+    ToolResult do_memory_search(const Json& params);
+    ToolResult do_memory_get(const Json& params);
+    ToolResult do_file_save(const Json& params);
+    ToolResult do_file_read(const Json& params);
+    ToolResult do_task_create(const Json& params);
+    ToolResult do_task_list(const Json& params);
+    ToolResult do_task_complete(const Json& params);
     
-    // ---- MEMORY operations (DATABASE only - structured entries) ----
-    Json memory_save(const Json& params);
-    Json memory_search(const Json& params);
-    Json memory_list(const Json& params);
-    Json memory_delete(const Json& params);
+    // Helper: resolve a path relative to workspace
+    std::string resolve_path(const std::string& path) const;
     
-    // ---- TASK operations (DATABASE only) ----
-    Json task_create(const Json& params);
-    Json task_complete(const Json& params);
-    Json task_list(const Json& params);
+    // Helper: ensure directory exists for a file path
+    bool ensure_parent_dir(const std::string& filepath) const;
     
-    Json make_error(const std::string& message);
-    Json make_success(const std::string& message);
+    // Helper: get daily file path (memory/YYYY-MM-DD.md)
+    std::string daily_file_path() const;
 };
 
 } // namespace opencrank

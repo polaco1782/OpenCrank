@@ -6,6 +6,7 @@
 #include <opencrank/core/application.hpp>
 #include <opencrank/core/logger.hpp>
 #include <opencrank/core/commands.hpp>
+#include <opencrank/core/sandbox.hpp>
 #include <opencrank/core/builtin_tools.hpp>
 #include <opencrank/core/browser_tool.hpp>
 #include <opencrank/core/memory_tool.hpp>
@@ -15,6 +16,7 @@
 #include <iostream>
 #include <csignal>
 #include <cstring>
+#include <climits>
 #include <unistd.h>
 #include <curl/curl.h>
 
@@ -142,6 +144,59 @@ bool Application::parse_args(int argc, char* argv[]) {
     return true;
 }
 
+void Application::setup_sandbox() {
+    auto& sandbox = Sandbox::instance();
+    
+    // Phase 1: Initialize sandbox directories (~/.opencrank/db, ~/.opencrank/jail)
+    // and override config paths. Landlock is NOT activated yet so that plugins,
+    // config files, and shared libraries can still be loaded.
+    if (!sandbox.init()) {
+        LOG_ERROR("Failed to initialize sandbox directories");
+        return;
+    }
+    
+    // Override workspace_dir to point into the jail
+    auto configured_workspace = config_.get_string("workspace_dir", "");
+    if (configured_workspace.empty() || configured_workspace == ".") {
+        config_.set_string("workspace_dir", sandbox.jail_dir());
+        LOG_INFO("[Sandbox] workspace_dir -> %s", sandbox.jail_dir().c_str());
+    }
+    
+    // Override memory database path to ~/.opencrank/db/memory.db
+    auto configured_db = config_.get_string("memory_db_path", "");
+    if (configured_db.empty() || configured_db.find("/.opencrank/") != std::string::npos) {
+        config_.set_string("memory_db_path", sandbox.memory_db_path());
+        LOG_INFO("[Sandbox] memory_db_path -> %s", sandbox.memory_db_path().c_str());
+    }
+    
+    LOG_INFO("[Sandbox] Directories ready (Landlock will activate after init)");
+}
+
+void Application::activate_sandbox() {
+    // Phase 2: Activate Landlock. Called AFTER all plugins, configs, and
+    // shared libraries have been loaded. From this point on, neither this
+    // process nor any child process can access the filesystem outside the
+    // allowed paths.
+    bool sandbox_enabled = config_.get_bool("sandbox.enabled", true);
+    if (!sandbox_enabled) {
+        LOG_WARN("[Sandbox] Sandbox disabled by config (sandbox.enabled=false)");
+        return;
+    }
+    
+    auto& sandbox = Sandbox::instance();
+    if (sandbox.base_dir().empty()) {
+        LOG_WARN("[Sandbox] Sandbox not initialized, skipping activation");
+        return;
+    }
+    
+    if (sandbox.activate()) {
+        LOG_INFO("[Sandbox] Process jailed into %s", sandbox.base_dir().c_str());
+    } else {
+        LOG_WARN("[Sandbox] Could not activate Landlock sandbox.");
+        LOG_WARN("[Sandbox] The process is NOT sandboxed. Consider upgrading to Linux >= 5.13.");
+    }
+}
+
 void Application::setup_logging() {
     auto log_level = config_.get_string("log_level", "info");
     
@@ -245,14 +300,21 @@ void Application::setup_agent() {
 }
 
 void Application::setup_plugins() {
-    // Configure plugin search paths
-    loader_.add_search_path("./bin/plugins");
-    loader_.add_search_path("./plugins");
-    
+    // Configure plugin search path from config, defaulting to ~/.opencrank/plugins
     auto plugins_dir = config_.get_string("plugins_dir", "");
-    if (!plugins_dir.empty()) {
-        loader_.add_search_path(plugins_dir);
+
+    if (plugins_dir.empty()) {
+        // Default to sandbox-friendly location
+        const char* home = getenv("HOME");
+        if (home) {
+            plugins_dir = std::string(home) + "/.opencrank/plugins";
+        } else {
+            plugins_dir = ".opencrank/plugins";
+        }
+        LOG_INFO("Using default plugins directory: %s", plugins_dir.c_str());
     }
+    
+    loader_.add_search_path(plugins_dir);
     
     // Load external plugins from config
     int loaded = loader_.load_from_config(config_);
@@ -358,12 +420,25 @@ void Application::setup_channels() {
 bool Application::init(int argc, char* argv[]) {
     // Initialize libcurl globally (before threads start)
     curl_global_init(CURL_GLOBAL_ALL);
+
+    // Change to home directory for consistent path resolution
+    {
+        const char* home = getenv("HOME");
+        std::string app_dir;
+        if (home && home[0] != '\0') {
+            app_dir = std::string(home) + "/.opencrank";
+        } else {
+            app_dir = ".opencrank";
+        }
+        // Best-effort change; ignore error here
+        chdir(app_dir.c_str());
+    }
     
     // Parse command line
     if (!parse_args(argc, argv)) {
         return false;
     }
-   
+
     // Setup signal handlers
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -377,7 +452,12 @@ bool Application::init(int argc, char* argv[]) {
     } else {
         LOG_INFO("Loaded config from %s", config_file_.c_str());
     }
-        
+
+    setup_plugins();
+
+    // Setup sandbox (must be before any AI/tool processing)
+    setup_sandbox();
+    
     // Setup components in order
     setup_logging();
     setup_skills();
@@ -387,7 +467,6 @@ bool Application::init(int argc, char* argv[]) {
         config_.get_int("session.max_history", 20)));
     
     setup_agent();
-    setup_plugins();
     setup_channels();
     
     // Start AI process monitor
@@ -406,6 +485,10 @@ bool Application::init(int argc, char* argv[]) {
     
     ai_monitor_.start();
     LOG_INFO("AI process monitor started");
+    
+    // NOW activate Landlock sandbox - all plugins, configs, and shared
+    // libraries are loaded. From here on, filesystem is locked down.
+    activate_sandbox();
     
     // Verify we have something to run
     auto* gateway = registry().get_plugin("gateway");

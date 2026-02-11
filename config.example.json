@@ -55,6 +55,14 @@
     "model": "local-model"
   },
 
+  "openrouter": {
+    "_note": "OpenRouter API - access 100+ models via a single API key. Get one at https://openrouter.ai/keys",
+    "api_key": "YOUR_OPENROUTER_API_KEY_HERE",
+    "model": "openai/gpt-4o",
+    "_alternatives": "openai/gpt-4o-mini, anthropic/claude-sonnet-4, google/gemini-2.5-pro-preview, meta-llama/llama-4-maverick, deepseek/deepseek-r1",
+    "api_url": "https://openrouter.ai/api/v1"
+  },
+
   "_section_gateway": "========== GATEWAY SERVER ==========",
 
   "gateway": {
@@ -116,5 +124,6 @@
   "_telegram_bot": "Telegram Bot: plugins=['telegram','claude']",
   "_gateway_ui": "Gateway + Web UI: plugins=['gateway','claude']",
   "_local_llm": "Local LLM: plugins=['gateway','llamacpp']",
+  "_openrouter": "OpenRouter: plugins=['gateway','openrouter'] - access any model via openrouter.ai",
   "_local_test": "Minimal Test: plugins=['claude']"
 }

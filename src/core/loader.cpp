@@ -30,7 +30,7 @@ namespace {
 
 PluginLoader::PluginLoader() {
     // Default search paths
-    search_paths_.push_back("./plugins");
+    search_paths_.push_back("./opencrank/plugins");
     search_paths_.push_back("/usr/lib/opencrank/plugins");
     search_paths_.push_back("/usr/local/lib/opencrank/plugins");
 }

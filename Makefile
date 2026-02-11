@@ -17,6 +17,7 @@ PLUGIN_DIRS = src/plugins/telegram \
               src/plugins/whatsapp \
               src/plugins/claude \
               src/plugins/llamacpp \
+              src/plugins/openrouter \
               src/plugins/polls \
               src/plugins/gateway
 
@@ -43,7 +44,8 @@ CORE_SOURCES = $(SRC_DIR)/core/types.cpp \
                $(SRC_DIR)/memory/store.cpp \
                $(SRC_DIR)/memory/manager.cpp \
                $(SRC_DIR)/skills/loader.cpp \
-               $(SRC_DIR)/skills/manager.cpp
+               $(SRC_DIR)/skills/manager.cpp \
+               $(SRC_DIR)/core/sandbox.cpp
 
 # Core object files
 CORE_OBJECTS = $(BUILD_DIR)/types.o \
@@ -71,7 +73,8 @@ CORE_OBJECTS = $(BUILD_DIR)/types.o \
                $(BUILD_DIR)/memory_store.o \
                $(BUILD_DIR)/memory_manager.o \
                $(BUILD_DIR)/skills_loader.o \
-               $(BUILD_DIR)/skills_manager.o
+               $(BUILD_DIR)/skills_manager.o \
+               $(BUILD_DIR)/sandbox.o
 
 # Main binary objects
 MAIN_OBJECTS = $(BUILD_DIR)/main.o $(CORE_OBJECTS)
@@ -180,6 +183,9 @@ $(BUILD_DIR)/session.o: $(SRC_DIR)/core/session.cpp
 	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
 
 $(BUILD_DIR)/rate_limiter.o: $(SRC_DIR)/core/rate_limiter.cpp
+	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
+
+$(BUILD_DIR)/sandbox.o: $(SRC_DIR)/core/sandbox.cpp
 	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
 
 # Debug build

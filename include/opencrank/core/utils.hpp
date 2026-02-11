@@ -139,6 +139,9 @@ std::string strip_html_for_ai(const std::string& html);
 // Normalize whitespace: collapse runs of whitespace to single space, trim.
 std::string normalize_whitespace(const std::string& s);
 
+// Sanitize URL by removing HTML tags and invalid characters
+std::string sanitize_url(const std::string& url);
+
 // ============ UUID utilities ============
 
 // Generate a random UUID v4

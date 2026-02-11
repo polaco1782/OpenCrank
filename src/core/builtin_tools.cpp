@@ -6,6 +6,7 @@
 #include <opencrank/core/builtin_tools.hpp>
 #include <opencrank/core/logger.hpp>
 #include <opencrank/core/config.hpp>
+#include <opencrank/core/sandbox.hpp>
 
 #include <fstream>
 #include <sstream>
@@ -50,11 +51,24 @@ std::string resolve(const std::string& path, const std::string& workspace) {
     return workspace + "/" + path;
 }
 
-bool is_within_workspace(const std::string& path, const std::string& /*workspace*/) {
+bool is_within_workspace(const std::string& path, const std::string& workspace) {
     // Prevent directory traversal
     if (path.find("..") != std::string::npos) {
         return false;
     }
+    
+    // If sandbox is active, verify path is within allowed boundaries
+    auto& sandbox = Sandbox::instance();
+    if (sandbox.is_active()) {
+        std::string full = path;
+        if (path[0] != '/') {
+            full = workspace + "/" + path;
+        }
+        if (!sandbox.is_path_allowed(full)) {
+            return false;
+        }
+    }
+    
     return true;
 }
 
@@ -391,6 +405,16 @@ AgentToolResult BuiltinToolsProvider::do_shell(const Json& params) const {
         lower_cmd.find("rm -rf ~") != std::string::npos ||
         lower_cmd.find(":(){") != std::string::npos) {  // Fork bomb
         return AgentToolResult::fail("Command blocked for safety");
+    }
+    
+    // Sandbox enforcement: ensure workdir is within jail
+    auto& sandbox = Sandbox::instance();
+    if (sandbox.is_active()) {
+        if (!sandbox.is_path_allowed(workdir)) {
+            LOG_WARN("[shell tool] Workdir '%s' outside sandbox, forcing to jail",
+                     workdir.c_str());
+            workdir = sandbox.jail_dir();
+        }
     }
     
     // Build full command

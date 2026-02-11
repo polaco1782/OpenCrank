@@ -11,7 +11,8 @@ LDFLAGS_PLUGIN = -shared
 # Directories
 ROOT_DIR = ../../..
 BUILD_DIR = $(ROOT_DIR)/build
-INSTALL_DIR = $(ROOT_DIR)/bin/plugins
+#INSTALL_DIR = $(ROOT_DIR)/bin/plugins
+INSTALL_DIR = ~/.opencrank/plugins
 
 # Core object files (shared across all plugins)
 # NOTE: registry.o is intentionally excluded - plugins use the singleton from main binary

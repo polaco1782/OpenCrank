@@ -1,6 +1,7 @@
 #include <opencrank/plugins/telegram/telegram.hpp>
 #include <opencrank/core/loader.hpp>
 #include <sstream>
+#include <chrono>
 
 namespace opencrank {
 
@@ -93,6 +94,52 @@ std::string markdown_to_html(const std::string& text) {
             continue;
         }
         
+        // Fenced code blocks: ```lang?\ncontent\n```
+        if (i + 2 < text.size() && text[i] == '`' && text[i+1] == '`' && text[i+2] == '`') {
+            // Found opening ```
+            i += 3;  // Skip ```
+            
+            // Optional language
+            std::string lang;
+            while (i < text.size() && text[i] != '\n' && text[i] != '`') {
+                lang += text[i];
+                i++;
+            }
+            if (i < text.size() && text[i] == '\n') i++;  // Skip \n after lang
+            
+            size_t start = i;
+            bool found_close = false;
+            int backtick_count = 0;
+            
+            // Find closing ```
+            while (i < text.size()) {
+                if (text[i] == '`') {
+                    backtick_count++;
+                    if (backtick_count == 3) {
+                        found_close = true;
+                        i++;  // Skip last `
+                        break;
+                    }
+                } else {
+                    backtick_count = 0;
+                }
+                i++;
+            }
+            
+            if (found_close) {
+                std::string code_content = text.substr(start, i - 3 - start);
+                result += "&lt;pre&gt;&lt;code";
+                if (!lang.empty()) {
+                    result += " class=\"language-" + escape_html(lang) + "\"";
+                }
+                result += "&gt;" + escape_html(code_content) + "&lt;/code&gt;&lt;/pre&gt;";
+            } else {
+                // No closing, treat as literal
+                result += "```" + escape_html(text.substr(start, text.size() - start));
+            }
+            continue;
+        }
+        
         // Escape HTML special chars and copy
         switch (text[i]) {
             case '&': result += "&amp;"; break;
@@ -111,6 +158,7 @@ TelegramChannel::TelegramChannel()
     : status_(ChannelStatus::STOPPED)
     , last_update_id_(0)
     , poll_timeout_(30)
+    , poll_backoff_(30)
     , should_stop_polling_(false) {}
 
 const char* TelegramChannel::name() const { return "telegram"; }
@@ -138,11 +186,16 @@ bool TelegramChannel::init(const Config& cfg) {
     }
     
     api_base_ = "https://api.telegram.org/bot" + bot_token_;
-    
+    // poll_timeout_ logic unchanged
     poll_timeout_ = static_cast<int>(cfg.get_channel_string("telegram", "poll_timeout", "30")[0] - '0') * 10;
     if (poll_timeout_ <= 0 || poll_timeout_ > 60) poll_timeout_ = 30;
-    
-    LOG_INFO("Telegram: initialized with poll_timeout=%d", poll_timeout_);
+
+    // Read poll_backoff from config, default 30
+    std::string backoff_str = cfg.get_channel_string("telegram", "poll_backoff", "30");
+    poll_backoff_ = std::stoi(backoff_str);
+    if (poll_backoff_ <= 0 || poll_backoff_ > 60) poll_backoff_ = 30;
+
+    LOG_INFO("Telegram: initialized with poll_timeout=%d, poll_backoff=%d", poll_timeout_, poll_backoff_);
     initialized_ = true;
     return true;
 }
@@ -253,43 +306,55 @@ SendResult TelegramChannel::send_typing_action(const std::string& to) {
 }
 
 void TelegramChannel::poll() {
-    // No-op: polling now happens in dedicated thread
-    // This method kept for API compatibility
+    // If the polling thread is running, skip - it handles polling already.
+    // This prevents the main event loop from calling poll() concurrently,
+    // which would cause curl handle conflicts on the shared http_ instance.
+    if (poll_thread_.joinable() && !should_stop_polling_) {
+        return;
+    }
+
+    poll_tick();
+}
+
+void TelegramChannel::poll_tick() {
+    std::ostringstream url;
+    url << api_base_ << "/getUpdates?timeout=" << poll_timeout_;
+    if (last_update_id_ > 0) {
+        url << "&offset=" << (last_update_id_ + 1);
+    }
+    url << "&allowed_updates=" << "[\"message\",\"edited_message\"]";
+
+    http_.set_timeout((poll_timeout_ + 5) * 1000);
+
+    HttpResponse resp = http_.get(url.str());
+    
+    if (!resp.ok()) {
+        if (!should_stop_polling_) {
+            LOG_WARN("Telegram: poll failed - %s (retrying in %ds)", resp.error.c_str(), poll_backoff_);
+            std::this_thread::sleep_for(std::chrono::seconds(poll_backoff_));
+        }
+        return;
+    }
+
+    Json result = resp.json();
+    if (!result.value("ok", false)) {
+        LOG_WARN("Telegram: poll API error - %s (retrying in %ds)", result.value("description", std::string("unknown")).c_str(), poll_backoff_);
+        std::this_thread::sleep_for(std::chrono::seconds(poll_backoff_));
+        return;
+    }
+    
+    if (result.contains("result") && result["result"].is_array()) {
+        for (const auto& update : result["result"]) {
+            process_update(update);
+        }
+    }
 }
 
 void TelegramChannel::polling_loop() {
     LOG_INFO("Telegram: polling loop started");
     
     while (!should_stop_polling_ && status_ == ChannelStatus::RUNNING) {
-        std::ostringstream url;
-        url << api_base_ << "/getUpdates?timeout=" << poll_timeout_;
-        if (last_update_id_ > 0) {
-            url << "&offset=" << (last_update_id_ + 1);
-        }
-        url << "&allowed_updates=" << "[\"message\",\"edited_message\"]";
-        
-        http_.set_timeout((poll_timeout_ + 5) * 1000);
-        
-        HttpResponse resp = http_.get(url.str());
-        
-        if (!resp.ok()) {
-            if (!should_stop_polling_) {
-                LOG_WARN("Telegram: poll failed - %s", resp.error.c_str());
-            }
-            continue;
-        }
-        
-        Json result = resp.json();
-        if (!result.value("ok", false)) {
-            LOG_WARN("Telegram: poll API error - %s", result.value("description", std::string("unknown")).c_str());
-            continue;
-        }
-        
-        if (result.contains("result") && result["result"].is_array()) {
-            for (const auto& update : result["result"]) {
-                process_update(update);
-            }
-        }
+        poll_tick();
     }
     
     LOG_INFO("Telegram: polling loop exited");

@@ -41,9 +41,9 @@ public:
     // Send typing action
     SendResult send_typing_action(const std::string& to);
     
-    // Poll for updates (call this regularly)
-    void poll();
-
+    // Poll for new messages (single tick)
+    void poll() override;
+    
 private:
     std::string bot_token_;
     std::string api_base_;
@@ -54,12 +54,12 @@ private:
     ChannelStatus status_;
     int64_t last_update_id_;
     int poll_timeout_;
-    
+    int poll_backoff_; // Backoff in seconds for poll failures
     // Polling thread
     std::thread poll_thread_;
     std::atomic<bool> should_stop_polling_;
-    
     void polling_loop();
+    void poll_tick();
     SendResult send_message_impl(const std::string& to, const std::string& text, int64_t reply_to);
     void process_update(const Json& update);
 };

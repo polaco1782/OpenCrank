@@ -487,10 +487,20 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
                 LOG_WARN("[Agent] Failed to parse stringified arguments for '%s'", tool_name.c_str());
             }
         } else {
-            // No arguments field - that's OK for tools with no params
+            // Extract top-level parameters (excluding "tool")
             call.params = Json::object();
+            for (auto& item : parsed.value.items()) {
+                if (item.key() != "tool") {
+                    call.params[item.key()] = item.value();
+                }
+            }
+            if (!call.params.empty()) {
+                LOG_DEBUG("[Agent] Extracted top-level params for '%s': %s", 
+                          tool_name.c_str(), call.params.dump().c_str());
+            } else {
+                LOG_DEBUG("[Agent] No arguments for '%s', using empty params", tool_name.c_str());
+            }
             call.valid = true;
-            LOG_DEBUG("[Agent] No arguments for '%s', using empty params", tool_name.c_str());
         }
         
         calls.push_back(call);
@@ -560,6 +570,7 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
     
     LOG_INFO("[Agent] ▶ TOOL Executing: %s", call.tool_name.c_str());
     LOG_DEBUG("[Agent] ▶ TOOL Params: %s", effective_call.params.dump().c_str());
+    LOG_DEBUG("[Agent] ▶ TOOL Raw content: %s", effective_call.raw_content.c_str());
     
     // Send debug message to chat if debug logging is enabled
     if (!channel_id_.empty() && !chat_id_.empty() && 
@@ -573,8 +584,23 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
             debug_msg << "🔧 **Tool Call [DEBUG]**\n";
             debug_msg << "Tool: `" << call.tool_name << "`\n";
             debug_msg << "Arguments:\n```json\n";
+            
+            // Log the raw parameters before formatting
+            LOG_DEBUG("[Agent] Raw params before dump: %s", effective_call.params.dump().c_str());
+            
+            // Check if parameters are empty and log more information
+            if (effective_call.params.is_null() || effective_call.params.empty()) {
+                LOG_DEBUG("[Agent] WARNING: Parameters are empty or null!");
+                LOG_DEBUG("[Agent] Call valid status: %s", effective_call.valid ? "true" : "false");
+                LOG_DEBUG("[Agent] Call raw content: %s", effective_call.raw_content.c_str());
+            }
+            
+            // Format with proper indentation
             debug_msg << effective_call.params.dump(2);
             debug_msg << "\n```";
+            
+            // Log the debug message content for debugging
+            LOG_DEBUG("[Agent] Debug message content: %s", debug_msg.str().c_str());
             
             channel->send_message(chat_id_, debug_msg.str());
             LOG_DEBUG("[Agent] Sent debug tool call message to %s:%s", 
@@ -583,6 +609,9 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
     }
     
     try {
+        // Log parameters just before execution
+        LOG_DEBUG("[Agent] About to execute tool with params: %s", effective_call.params.dump().c_str());
+        
         AgentToolResult result = it->second.execute(effective_call.params);
         LOG_DEBUG("[Agent] ◀ TOOL %s result: success=%s, output_len=%zu",
                   call.tool_name.c_str(), result.success ? "yes" : "no", 

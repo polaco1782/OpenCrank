@@ -2,6 +2,7 @@
  * OpenCrank C++11 - Memory Manager Implementation
  */
 #include <opencrank/memory/manager.hpp>
+#include <opencrank/core/sandbox.hpp>
 #include <fstream>
 #include <sstream>
 #include <ctime>
@@ -34,10 +35,15 @@ bool MemoryManager::initialize() {
         return false;
     }
     
-    // Determine database path
+    // Determine database path - prefer sandbox db directory
     std::string db_path = config_.db_path;
     if (db_path.empty()) {
-        db_path = config_.workspace_dir + "/.opencrank/memory.db";
+        auto& sandbox = Sandbox::instance();
+        if (!sandbox.db_dir().empty()) {
+            db_path = sandbox.memory_db_path();
+        } else {
+            db_path = config_.workspace_dir + "/.opencrank/memory.db";
+        }
     }
     
     // Ensure parent directory exists
@@ -114,6 +120,13 @@ bool MemoryManager::sync() {
 
 bool MemoryManager::save_memory(const std::string& content, const std::string& filename) {
     std::string target = filename.empty() ? "MEMORY.md" : filename;
+    
+    // Prevent path traversal
+    if (target.find("..") != std::string::npos) {
+        set_error("Path traversal not allowed: " + target);
+        return false;
+    }
+    
     std::string full_path = config_.workspace_dir + "/" + target;
     
     std::ofstream file(full_path.c_str());
@@ -893,7 +906,12 @@ MemoryManager::MemoryStatus MemoryManager::status() const {
     s.workspace_dir = config_.workspace_dir;
     s.db_path = config_.db_path;
     if (s.db_path.empty()) {
-        s.db_path = config_.workspace_dir + "/.opencrank/memory.db";
+        auto& sbx = Sandbox::instance();
+        if (!sbx.db_dir().empty()) {
+            s.db_path = sbx.memory_db_path();
+        } else {
+            s.db_path = config_.workspace_dir + "/.opencrank/memory.db";
+        }
     }
     
     if (initialized_ && store_) {

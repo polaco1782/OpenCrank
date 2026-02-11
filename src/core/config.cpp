@@ -143,4 +143,18 @@ std::string Config::get_channel_string(const std::string& channel,
 
 const Json& Config::data() const { return data_; }
 
+void Config::set_string(const std::string& key, const std::string& value) {
+    size_t dot_pos = key.find('.');
+    if (dot_pos != std::string::npos) {
+        std::string section = key.substr(0, dot_pos);
+        std::string subkey = key.substr(dot_pos + 1);
+        if (!data_.contains(section)) {
+            data_[section] = Json::object();
+        }
+        data_[section][subkey] = value;
+    } else {
+        data_[key] = value;
+    }
+}
+
 } // namespace opencrank

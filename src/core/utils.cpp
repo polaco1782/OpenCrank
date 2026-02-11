@@ -608,4 +608,64 @@ std::string normalize_whitespace(const std::string& s) {
     return result;
 }
 
+std::string sanitize_url(const std::string& url) {
+    // First, strip HTML tags and normalize whitespace
+    std::string stripped = strip_html_for_ai(url);
+    
+    // Then filter to keep only valid URL characters
+    std::string result;
+    result.reserve(stripped.size());
+    
+    for (char c : stripped) {
+        // Keep valid URL characters (RFC 3986 unreserved characters + sub-delims + some others)
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+            (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' || 
+            c == '~' || c == ':' || c == '/' || c == '?' || c == '#' || 
+            c == '[' || c == ']' || c == '@' || c == '!' || c == '$' || 
+            c == '&' || c == '(' || c == ')' || c == '*' || c == '+' || 
+            c == ',' || c == ';' || c == '=' || c == '%') {
+            result += c;
+        }
+        // Skip other characters (including control chars, spaces, etc.)
+    }
+    
+    return result;
+}
+
+std::string strip_html_tags(const std::string& input) {
+    std::string result;
+    result.reserve(input.size());
+    bool in_tag = false;
+    
+    for (char c : input) {
+        if (c == '<') {
+            in_tag = true;
+        } else if (c == '>') {
+            in_tag = false;
+        } else if (!in_tag) {
+            result += c;
+        }
+    }
+    
+    return result;
+}
+
+std::string remove_invalid_url_chars(const std::string& url) {
+    std::string result;
+    result.reserve(url.size());
+    
+    for (char c : url) {
+        // Keep only valid URL characters
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+            (c >= '0' && c <= '9') || c == ':' || c == '/' || c == '.' || 
+            c == '-' || c == '_' || c == '~' || c == '?' || c == '&' || 
+            c == '=' || c == '#' || c == '%' || c == '+' || c == '@') {
+            result += c;
+        }
+    }
+    
+    return result;
+}
+
+
 } // namespace opencrank

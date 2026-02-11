@@ -216,8 +216,6 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYHOST, 2L);
 
-    curl_easy_setopt(curl_, CURLOPT_VERBOSE, 1L);
-    
     // Perform the request
     CURLcode res = curl_easy_perform(curl_);
     

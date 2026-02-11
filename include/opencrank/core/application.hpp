@@ -10,6 +10,7 @@
 #include "config.hpp"
 #include "loader.hpp"
 #include "registry.hpp"
+#include "sandbox.hpp"
 #include "session.hpp"
 #include "thread_pool.hpp"
 #include "rate_limiter.hpp"
@@ -99,6 +100,8 @@ private:
     
     // Initialization helpers
     bool parse_args(int argc, char* argv[]);
+    void setup_sandbox();      // Phase 1: create dirs, override paths
+    void activate_sandbox();   // Phase 2: activate Landlock (after plugins loaded)
     void setup_logging();
     void setup_skills();
     void setup_agent();

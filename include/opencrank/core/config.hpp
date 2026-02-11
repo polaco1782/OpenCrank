@@ -20,6 +20,9 @@ public:
     // Get string value
     std::string get_string(const std::string& key, const std::string& def = "") const;
     
+    // Set a string value (dot-notation supported for top-level section.key)
+    void set_string(const std::string& key, const std::string& value);
+    
     int64_t get_int(const std::string& key, int64_t def = 0) const;
     
     bool get_bool(const std::string& key, bool def = false) const;

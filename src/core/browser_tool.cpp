@@ -289,14 +289,27 @@ ToolResult BrowserTool::do_fetch(const Json& params) {
     }
 
     std::string url = params["url"].get<std::string>();
-    LOG_DEBUG("[Browser] ▶ OUT Fetching URL: %s", url.c_str());
 
+    // Sanitize URL to remove HTML tags and invalid characters
+    std::string sanitized_url = sanitize_url(url);
+    
+    // If sanitization removed everything, return error
+    if (sanitized_url.empty()) {
+        result.success = false;
+        result.error = "Invalid URL: URL contains only invalid characters or HTML tags";
+        return result;
+    }
+    
     // Validate URL format
-    if (url.find("http://") != 0 && url.find("https://") != 0) {
+    if (sanitized_url.find("http://") != 0 && sanitized_url.find("https://") != 0) {
         result.success = false;
         result.error = "URL must start with http:// or https://";
         return result;
     }
+    
+    // Use the sanitized URL for the request
+    url = sanitized_url;
+    LOG_DEBUG("[Browser] ▶ OUT Fetching URL: %s", url.c_str());
 
     // Set up headers
     std::map<std::string, std::string> headers;
@@ -648,11 +661,26 @@ ToolResult BrowserTool::do_request(const Json& params) {
     }
 
     std::string url = params["url"].get<std::string>();
-    if (url.find("http://") != 0 && url.find("https://") != 0) {
+    
+    // Sanitize URL to remove HTML tags and invalid characters
+    std::string sanitized_url = sanitize_url(url);
+    
+    // If sanitization removed everything, return error
+    if (sanitized_url.empty()) {
+        result.success = false;
+        result.error = "Invalid URL: URL contains only invalid characters or HTML tags";
+        return result;
+    }
+    
+    // Validate URL format
+    if (sanitized_url.find("http://") != 0 && sanitized_url.find("https://") != 0) {
         result.success = false;
         result.error = "URL must start with http:// or https://";
         return result;
     }
+    
+    // Use the sanitized URL for the request
+    url = sanitized_url;
 
     // Build body
     std::string body;

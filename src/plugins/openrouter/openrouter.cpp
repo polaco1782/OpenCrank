@@ -54,6 +54,10 @@ bool OpenRouterAI::init(const Config& cfg) {
     ctx_config.auto_save_memory = true;
     context_manager_.set_config(ctx_config);
     
+    LOG_INFO("Context manager configured: max %zu chars, reserve %zu chars, threshold %.0f%%, auto-save %s",
+             ctx_config.max_context_chars, ctx_config.reserve_for_response, 
+             ctx_config.usage_threshold * 100.0, ctx_config.auto_save_memory ? "enabled" : "disabled");
+    
     LOG_INFO("OpenRouter AI initialized with model: %s", default_model_.c_str());
     initialized_ = true;
     return true;
@@ -112,10 +116,18 @@ CompletionResult OpenRouterAI::chat(
     LOG_DEBUG("[OpenRouter] Starting chat request with %zu messages", messages.size());
     
     // Manage context window intelligently (resume-based strategy)
-    std::vector<ConversationMessage> trimmed_messages = manage_context(messages, opts.system_prompt);
-    if (trimmed_messages.size() != messages.size()) {
-        LOG_INFO("[OpenRouter] Context managed: %zu -> %zu messages",
-                 messages.size(), trimmed_messages.size());
+    // Skip if disabled for internal operations like resume generation
+    std::vector<ConversationMessage> trimmed_messages;
+    if (!opts.skip_context_management) {
+        LOG_DEBUG("[OpenRouter] Checking context management for %zu messages", messages.size());
+        trimmed_messages = manage_context(messages, opts.system_prompt);
+        if (trimmed_messages.size() != messages.size()) {
+            LOG_INFO("[OpenRouter] Context managed: %zu -> %zu messages",
+                     messages.size(), trimmed_messages.size());
+        }
+    } else {
+        LOG_DEBUG("[OpenRouter] Skipping context management (skip_context_management=true)");
+        trimmed_messages = messages;
     }
     
     // Build OpenAI-compatible request
@@ -352,6 +364,11 @@ std::vector<ConversationMessage> OpenRouterAI::manage_context(
     if (messages.empty()) {
         return messages;
     }
+    
+    // Debug: Log current context usage
+    ContextUsage usage = context_manager_.estimate_usage(messages, system_prompt);
+    LOG_INFO("[OpenRouter] Context usage: %.1f%% (%zu/%zu chars, %zu messages)",
+             usage.usage_ratio * 100.0, usage.total_chars, usage.budget_chars, messages.size());
     
     // Check if we need a resume cycle
     if (context_manager_.needs_resume(messages, system_prompt)) {

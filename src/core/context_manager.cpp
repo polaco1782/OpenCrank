@@ -114,6 +114,7 @@ std::string ContextManager::generate_resume(
     opts.system_prompt = system_prompt;
     opts.max_tokens = 2048; // Resume should be concise
     opts.temperature = 0.3; // Low temperature for accuracy
+    opts.skip_context_management = true; // Don't manage context during resume generation
     
     LOG_INFO("[ContextManager] Generating conversation resume (%zu messages in history)",
              history.size());

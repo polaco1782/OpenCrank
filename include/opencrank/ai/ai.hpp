@@ -87,10 +87,11 @@ struct CompletionOptions {
     int max_tokens;              // Max tokens to generate (0 = default)
     double temperature;          // Sampling temperature (0-1)
     bool stream;                 // Enable streaming
+    bool skip_context_management; // Skip context window management (for internal operations)
     StreamCallback on_chunk;     // Called for each chunk when streaming
     
     CompletionOptions() 
-        : max_tokens(4096), temperature(0.7), stream(false) {}
+        : max_tokens(4096), temperature(0.7), stream(false), skip_context_management(false) {}
 };
 
 // Abstract AI provider plugin interface

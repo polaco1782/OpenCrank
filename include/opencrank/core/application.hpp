@@ -58,7 +58,7 @@ public:
     PluginLoader& loader() { return loader_; }
     PluginRegistry& registry() { return PluginRegistry::instance(); }
     SessionManager& sessions() { return SessionManager::instance(); }
-    ThreadPool& thread_pool() { return thread_pool_; }
+    ThreadPool* thread_pool() { return thread_pool_; }
     
     SkillManager& skills() { return skill_manager_; }
     const std::vector<SkillEntry>& skill_entries() const { return skill_entries_; }
@@ -77,7 +77,6 @@ public:
     // System prompt (can be customized via config)
     const std::string& system_prompt() const { return system_prompt_; }
     void set_system_prompt(const std::string& prompt) { system_prompt_ = prompt; }
-    void rebuild_system_prompt();
     
     // ==================== Lifecycle ====================
     
@@ -107,6 +106,7 @@ private:
     void setup_agent();
     void setup_plugins();
     void setup_channels();
+    void warmup_ai();
     
     // State
     std::atomic<bool> running_;
@@ -114,7 +114,7 @@ private:
     // Core components
     Config config_;
     PluginLoader loader_;
-    ThreadPool thread_pool_;
+    ThreadPool* thread_pool_;
     Agent agent_;
     AIProcessMonitor ai_monitor_;
     

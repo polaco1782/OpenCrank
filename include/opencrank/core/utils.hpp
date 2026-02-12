@@ -75,6 +75,9 @@ std::string normalize_path(const std::string& path);
 // Join path components
 std::string join_path(const std::string& a, const std::string& b);
 
+// Create parent directory for a file path (recursive)
+bool create_parent_directory(const std::string& filepath);
+
 // ============ HTML utilities ============
 
 // Strip HTML tags for AI consumption.

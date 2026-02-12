@@ -6,6 +6,7 @@
 
 #include <dlfcn.h>
 #include <string>
+#include <algorithm>
 
 namespace opencrank {
 
@@ -19,7 +20,8 @@ inline T get_symbol(void* handle, const char* name) {
 }
 
 inline bool ends_with(const std::string& s, const std::string& suf) {
-    return s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
+    return s.size() >= suf.size() && 
+           std::equal(suf.rbegin(), suf.rend(), s.rbegin());
 }
 
 } // namespace opencrank

@@ -18,6 +18,7 @@
 #include <cstring>
 #include <climits>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <curl/curl.h>
 
 namespace opencrank {
@@ -30,8 +31,7 @@ const char* AppInfo::default_system_prompt() {
     return 
         "You are OpenCrank, a helpful AI assistant running on a minimal C++11 framework. "
         "You are friendly, concise, and helpful. Keep responses brief unless asked for detail. "
-        "You can help with questions, coding, and general conversation.\n\n"
-        "You have access to tools that let you browse the web and manage memory/tasks.";
+        "You can help with questions, coding, and general conversation.";
 }
 
 // ============================================================================
@@ -118,10 +118,10 @@ Application& Application::instance() {
 
 Application::Application() 
     : running_(true)
-    , thread_pool_(8)  // 8 worker threads
+    , thread_pool_(nullptr)
     , user_limiter_(KeyedRateLimiter::TOKEN_BUCKET, 10, 2)
     , debouncer_(5)
-    , system_prompt_(AppInfo::default_system_prompt())
+    , system_prompt_("")
     , config_file_("config.json")
 {}
 
@@ -211,8 +211,9 @@ void Application::setup_logging() {
     // Load custom system prompt from config
     auto custom_prompt = config_.get_string("system_prompt", "");
     if (!custom_prompt.empty()) {
-        system_prompt_ = custom_prompt;
-        LOG_DEBUG("Using custom system prompt from config");
+        if (!system_prompt_.empty()) system_prompt_ += "\n\n";
+        system_prompt_ += custom_prompt;
+        LOG_DEBUG("Appended custom system prompt from config");
     }
 }
 
@@ -246,7 +247,8 @@ void Application::setup_skills() {
     if (!skill_entries_.empty()) {
         auto skills_section = skill_manager_.build_skills_section(&entries);
         if (!skills_section.empty()) {
-            system_prompt_ += "\n\n" + skills_section;
+            if (!system_prompt_.empty()) system_prompt_ += "\n\n";
+            system_prompt_ += skills_section;
             LOG_DEBUG("Appended skills section to system prompt");
             
             auto prompt_size = system_prompt_.size();
@@ -417,9 +419,39 @@ void Application::setup_channels() {
     LOG_INFO("%d channel(s) started, ready to receive messages", started_count);
 }
 
+void Application::warmup_ai() {
+    auto* ai = registry().get_default_ai();
+    if (!ai || !ai->is_configured()) {
+        LOG_DEBUG("Skipping AI warmup - no AI configured");
+        return;
+    }
+    
+    LOG_INFO("Warming up AI connection...");
+    
+    // Send a minimal warmup message to establish connection
+    std::vector<ConversationMessage> warmup_history;
+    warmup_history.push_back(ConversationMessage::system("You are a helpful AI assistant."));
+    warmup_history.push_back(ConversationMessage::user("Hello"));
+    
+    CompletionOptions opts;
+    opts.max_tokens = 10;  // Very short response
+    opts.temperature = 0.1; // Low creativity for fast response
+    
+    CompletionResult result = ai->chat(warmup_history, opts);
+    
+    if (result.success) {
+        LOG_INFO("AI warmup successful - connection established");
+    } else {
+        LOG_WARN("AI warmup failed: %s", result.error.c_str());
+    }
+}
+
 bool Application::init(int argc, char* argv[]) {
     // Initialize libcurl globally (before threads start)
     curl_global_init(CURL_GLOBAL_ALL);
+
+    // Create thread pool after curl init
+    thread_pool_ = new ThreadPool(8);
 
     // Change to home directory for consistent path resolution
     {
@@ -430,6 +462,10 @@ bool Application::init(int argc, char* argv[]) {
         } else {
             app_dir = ".opencrank";
         }
+        
+        // Create the directory if it doesn't exist
+        mkdir(app_dir.c_str(), 0755);
+        
         // Best-effort change; ignore error here
         chdir(app_dir.c_str());
     }
@@ -469,6 +505,9 @@ bool Application::init(int argc, char* argv[]) {
     setup_agent();
     setup_channels();
     
+    // Warm up AI connection
+    warmup_ai();
+    
     // Start AI process monitor
     AIProcessMonitor::Config monitor_config;
     monitor_config.hang_timeout_seconds = config_.get_int("ai_monitor.hang_timeout", 30);
@@ -506,24 +545,6 @@ bool Application::init(int argc, char* argv[]) {
     return true;
 }
 
-void Application::rebuild_system_prompt() {
-    // Rebuild with current skills
-    auto base_prompt = config_.get_string("system_prompt", AppInfo::default_system_prompt());
-    system_prompt_ = base_prompt;
-    
-    auto entries = skill_manager_.load_workspace_skill_entries();
-    auto eligible = skill_manager_.filter_skill_entries(entries, nullptr);
-    
-    if (!eligible.empty()) {
-        auto snapshot = skill_manager_.build_workspace_skill_snapshot(&entries, nullptr);
-        if (!snapshot.prompt.empty()) {
-            system_prompt_ += "\n\n" + snapshot.prompt;
-        }
-    }
-    
-    LOG_DEBUG("System prompt rebuilt with %zu eligible skills", eligible.size());
-}
-
 int Application::run() {
     LOG_INFO("Entering main loop (poll interval: 100ms)");
     LOG_DEBUG("[App] Active channels: %zu, Active plugins: %zu, Agent tools: %zu",
@@ -554,9 +575,13 @@ void Application::shutdown() {
     LOG_DEBUG("[App] AI monitor stopped");
     
     // Stop thread pool (wait for pending)
-    LOG_DEBUG("[App] Stopping thread pool (pending: %zu)", thread_pool_.pending());
-    thread_pool_.shutdown();
-    LOG_DEBUG("[App] Thread pool stopped");
+    if (thread_pool_) {
+        LOG_DEBUG("[App] Stopping thread pool (pending: %zu)", thread_pool_->pending());
+        thread_pool_->shutdown();
+        delete thread_pool_;
+        thread_pool_ = nullptr;
+        LOG_DEBUG("[App] Thread pool stopped");
+    }
     
     registry().stop_all_channels();
     registry().shutdown_all();

@@ -1,5 +1,6 @@
 #include <opencrank/core/utils.hpp>
 #include <algorithm>
+#include <numeric>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -10,9 +11,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <errno.h>
 #include <openssl/sha.h>
 #include <openssl/md5.h>
 #include <openssl/rand.h>
+#include <string_view>
 
 namespace opencrank {
 
@@ -51,19 +54,15 @@ std::string trim(const std::string& s) {
 }
 
 std::string ltrim(const std::string& s) {
-    size_t start = 0;
-    while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start]))) {
-        ++start;
-    }
+    size_t start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) return "";
     return s.substr(start);
 }
 
 std::string rtrim(const std::string& s) {
-    size_t end = s.size();
-    while (end > 0 && std::isspace(static_cast<unsigned char>(s[end - 1]))) {
-        --end;
-    }
-    return s.substr(0, end);
+    size_t end = s.find_last_not_of(" \t\n\r");
+    if (end == std::string::npos) return "";
+    return s.substr(0, end + 1);
 }
 
 std::string to_lower(const std::string& s) {
@@ -74,8 +73,8 @@ std::string to_lower(const std::string& s) {
 }
 
 bool starts_with(const std::string& s, const std::string& prefix) {
-    if (prefix.size() > s.size()) return false;
-    return s.compare(0, prefix.size(), prefix) == 0;
+    return s.size() >= prefix.size() && 
+           std::equal(prefix.begin(), prefix.end(), s.begin());
 }
 
 std::vector<std::string> split(const std::string& s, char delimiter) {
@@ -106,12 +105,11 @@ std::vector<std::string> split(const std::string& s, const std::string& delimite
 
 std::string join(const std::vector<std::string>& parts, const std::string& delimiter) {
     if (parts.empty()) return "";
-    std::ostringstream oss;
-    oss << parts[0];
-    for (size_t i = 1; i < parts.size(); ++i) {
-        oss << delimiter << parts[i];
-    }
-    return oss.str();
+    return std::accumulate(
+        std::next(parts.begin()), parts.end(), parts[0],
+        [&](const std::string& a, const std::string& b) {
+            return a + delimiter + b;
+        });
 }
 
 std::string truncate_safe(const std::string& s, size_t max_len) {
@@ -233,6 +231,30 @@ std::string join_path(const std::string& a, const std::string& b) {
         return a + "/" + b;
     }
     return a + b;
+}
+
+bool create_parent_directory(const std::string& filepath) {
+    // Find last '/' to get directory
+    size_t pos = filepath.rfind('/');
+    if (pos == std::string::npos) return true; // No directory component
+    
+    std::string dir = filepath.substr(0, pos);
+    
+    // Simple recursive mkdir
+    std::string current;
+    for (size_t i = 0; i < dir.size(); ++i) {
+        current += dir[i];
+        if (dir[i] == '/' || i == dir.size() - 1) {
+            struct stat st;
+            if (stat(current.c_str(), &st) != 0) {
+                if (mkdir(current.c_str(), 0755) != 0 && errno != EEXIST) {
+                    return false;
+                }
+            }
+        }
+    }
+    
+    return true;
 }
 
 // ============ UUID utilities ============

@@ -42,9 +42,9 @@ struct RoutePeer {
 // Session key utilities
 class SessionKey {
 public:
-    static const char* DEFAULT_AGENT_ID;
-    static const char* DEFAULT_ACCOUNT_ID;
-    static const char* DEFAULT_MAIN_KEY;
+    static inline constexpr const char* DEFAULT_AGENT_ID = "default";
+    static inline constexpr const char* DEFAULT_ACCOUNT_ID = "_default";
+    static inline constexpr const char* DEFAULT_MAIN_KEY = "main";
     
     // Build a session key from components
     static std::string build(const std::string& agent_id,

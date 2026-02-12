@@ -156,11 +156,11 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     std::string effective_proxy = proxy.empty() ? proxy_url_ : proxy;
     
     if (!effective_proxy.empty()) {
-        LOG_DEBUG("[HTTP] ▶ OUT %s %s (body: %zu bytes, proxy: %s)", 
+        LOG_DEBUG("▶ OUT %s %s (body: %zu bytes, proxy: %s)", 
                   method.c_str(), url.c_str(), body.size(), effective_proxy.c_str());
         curl_easy_setopt(curl_, CURLOPT_PROXY, effective_proxy.c_str());
     } else {
-        LOG_DEBUG("[HTTP] ▶ OUT %s %s (body: %zu bytes)", 
+        LOG_DEBUG("▶ OUT %s %s (body: %zu bytes)", 
                   method.c_str(), url.c_str(), body.size());
     }
     
@@ -225,7 +225,7 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     }
     
     if (res != CURLE_OK) {
-        LOG_DEBUG("[HTTP] ◀ IN  %s %s FAILED: %s", method.c_str(), url.c_str(), curl_easy_strerror(res));
+        LOG_DEBUG("◀ IN  %s %s FAILED: %s", method.c_str(), url.c_str(), curl_easy_strerror(res));
         resp.error = curl_easy_strerror(res);
         return resp;
     }
@@ -236,7 +236,7 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     resp.body = response_body;
     resp.headers = response_headers;
     
-    LOG_DEBUG("[HTTP] ◀ IN  %s %s -> HTTP %ld (%zu bytes)", 
+    LOG_DEBUG("◀ IN  %s %s -> HTTP %ld (%zu bytes)", 
               method.c_str(), url.c_str(), resp.status_code, resp.body.size());
     
     if (!resp.ok() && resp.error.empty()) {

@@ -6,7 +6,7 @@
  */
 #include <opencrank/memory/store.hpp>
 #include <opencrank/core/logger.hpp>
-
+#include <opencrank/core/utils.hpp>
 #include <sqlite3.h>
 #include <sstream>
 #include <cstring>
@@ -83,6 +83,12 @@ MemoryStore::~MemoryStore() {
 bool MemoryStore::open(const std::string& db_path) {
     if (db_) {
         close();
+    }
+    
+    // Ensure parent directory exists
+    if (!opencrank::create_parent_directory(db_path)) {
+        LOG_ERROR("[MemoryStore] Failed to create parent directory for '%s'", db_path.c_str());
+        return false;
     }
     
     int rc = sqlite3_open(db_path.c_str(), &db_);

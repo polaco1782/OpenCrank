@@ -114,20 +114,20 @@ CompletionResult OpenRouterAI::chat(
         return CompletionResult::fail("No messages provided");
     }
     
-    LOG_DEBUG("[OpenRouter] Starting chat request with %zu messages", messages.size());
+    LOG_DEBUG("Starting chat request with %zu messages", messages.size());
     
     // Manage context window intelligently (resume-based strategy)
     // Skip if disabled for internal operations like resume generation
     std::vector<ConversationMessage> trimmed_messages;
     if (!opts.skip_context_management) {
-        LOG_DEBUG("[OpenRouter] Checking context management for %zu messages", messages.size());
+        LOG_DEBUG("Checking context management for %zu messages", messages.size());
         trimmed_messages = manage_context(messages, opts.system_prompt);
         if (trimmed_messages.size() != messages.size()) {
-            LOG_INFO("[OpenRouter] Context managed: %zu -> %zu messages",
+            LOG_INFO(" Context managed: %zu -> %zu messages",
                      messages.size(), trimmed_messages.size());
         }
     } else {
-        LOG_DEBUG("[OpenRouter] Skipping context management (skip_context_management=true)");
+        LOG_DEBUG("Skipping context management (skip_context_management=true)");
         trimmed_messages = messages;
     }
     
@@ -136,16 +136,8 @@ CompletionResult OpenRouterAI::chat(
     
     std::string model = opts.model.empty() ? default_model_ : opts.model;
     request["model"] = model;
-    LOG_DEBUG("[OpenRouter] Using model: %s", model.c_str());
-    
-    // Add system prompt if provided
-    if (!opts.system_prompt.empty()) {
-        LOG_DEBUG("[OpenRouter] System prompt (%zu chars): %.200s%s", 
-                  opts.system_prompt.size(), 
-                  opts.system_prompt.c_str(),
-                  opts.system_prompt.size() > 200 ? "..." : "");
-    }
-    
+    LOG_DEBUG("Using model: %s", model.c_str());
+       
     // Convert messages to OpenAI format
     Json msgs = Json::array();
     
@@ -157,8 +149,8 @@ CompletionResult OpenRouterAI::chat(
         msgs.push_back(sys_msg);
     }
     
-    LOG_DEBUG("[OpenRouter] === ▶ IN  Messages being sent to AI ===");
-    LOG_DEBUG("[OpenRouter] ▶ IN  Model: %s", model.c_str());
+    LOG_DEBUG("=== ▶ IN  Messages being sent to AI ===");
+    LOG_DEBUG("▶ IN  Model: %s", model.c_str());
     
     for (size_t i = 0; i < trimmed_messages.size(); ++i) {
         const ConversationMessage& msg = trimmed_messages[i];
@@ -175,13 +167,13 @@ CompletionResult OpenRouterAI::chat(
         m["content"] = msg.content;
         msgs.push_back(m);
         
-        LOG_DEBUG("[OpenRouter]   ▶ [%zu] %s (%zu chars): %.300s%s", 
+        LOG_DEBUG("  ▶ [%zu] %s (%zu chars): %.300s%s", 
                   i, role_to_string(msg.role).c_str(), 
                   msg.content.size(), msg.content.c_str(),
                   msg.content.size() > 300 ? "..." : "");
     }
     request["messages"] = msgs;
-    LOG_DEBUG("[OpenRouter] === ▶ IN  End of messages (%zu total) ===", msgs.size());
+    LOG_DEBUG("=== ▶ IN  End of messages (%zu total) ===", msgs.size());
     
     // Set parameters
     if (opts.temperature >= 0.0) {
@@ -194,7 +186,7 @@ CompletionResult OpenRouterAI::chat(
     
     std::string endpoint = api_url_ + "/chat/completions";
     std::string request_body = request.dump();
-    LOG_DEBUG("[OpenRouter] ▶ IN  Sending request to %s (%zu bytes)", endpoint.c_str(), request_body.size());
+    LOG_DEBUG("▶ IN  Sending request to %s (%zu bytes)", endpoint.c_str(), request_body.size());
     
     // Prepare HTTP client
     HttpClient http;
@@ -206,11 +198,11 @@ CompletionResult OpenRouterAI::chat(
     HttpResponse response = http.post_json(endpoint, request_body, headers);
     
     if (response.status_code == 0) {
-        LOG_ERROR("[OpenRouter] HTTP request failed: %s", response.error.c_str());
+        LOG_ERROR(" HTTP request failed: %s", response.error.c_str());
         return CompletionResult::fail("HTTP request failed: " + response.error);
     }
     
-    LOG_DEBUG("[OpenRouter] ◀ OUT Received response [HTTP %d] (%zu bytes)", 
+    LOG_DEBUG("◀ OUT Received response [HTTP %d] (%zu bytes)", 
               response.status_code, response.body.size());
     
     std::string sanitized_body = sanitize_utf8(response.body);
@@ -218,7 +210,7 @@ CompletionResult OpenRouterAI::chat(
     try {
         resp = Json::parse(sanitized_body);
     } catch (const std::exception& e) {
-        LOG_ERROR("[OpenRouter] Failed to parse JSON response: %s", e.what());
+        LOG_ERROR(" Failed to parse JSON response: %s", e.what());
         return CompletionResult::fail("Invalid JSON response: " + std::string(e.what()));
     }
     
@@ -233,7 +225,7 @@ CompletionResult OpenRouterAI::chat(
                 }
             }
         }
-        LOG_ERROR("[OpenRouter] API error: %s (HTTP %d)", error_msg.c_str(), response.status_code);
+        LOG_ERROR(" API error: %s (HTTP %d)", error_msg.c_str(), response.status_code);
         return CompletionResult::fail(error_msg + " (HTTP " + 
                                      std::to_string(response.status_code) + ")");
     }
@@ -255,7 +247,7 @@ CompletionResult OpenRouterAI::chat(
                 !message["tool_calls"].empty()) {
                 
                 const Json& tool_calls = message["tool_calls"];
-                LOG_INFO("[OpenRouter] Found %zu native tool_call(s) in response", tool_calls.size());
+                LOG_INFO(" Found %zu native tool_call(s) in response", tool_calls.size());
                 
                 std::ostringstream reconstructed;
                 
@@ -267,7 +259,7 @@ CompletionResult OpenRouterAI::chat(
                     const Json& tc_obj = tool_calls[tc];
                     
                     if (!tc_obj.contains("function") || !tc_obj["function"].is_object()) {
-                        LOG_WARN("[OpenRouter] tool_call[%zu] missing 'function' object, skipping", tc);
+                        LOG_WARN(" tool_call[%zu] missing 'function' object, skipping", tc);
                         continue;
                     }
                     
@@ -276,12 +268,12 @@ CompletionResult OpenRouterAI::chat(
                     std::string arguments = func.value("arguments", std::string("{}"));
                     
                     if (tool_name.empty()) {
-                        LOG_WARN("[OpenRouter] tool_call[%zu] has empty function name, skipping", tc);
+                        LOG_WARN(" tool_call[%zu] has empty function name, skipping", tc);
                         continue;
                     }
                     
-                    LOG_INFO("[OpenRouter] Native tool_call[%zu]: %s", tc, tool_name.c_str());
-                    LOG_DEBUG("[OpenRouter] Native tool_call[%zu] arguments: %s", tc, arguments.c_str());
+                    LOG_INFO(" Native tool_call[%zu]: %s", tc, tool_name.c_str());
+                    LOG_DEBUG("Native tool_call[%zu] arguments: %s", tc, arguments.c_str());
                     
                     if (tc > 0) {
                         reconstructed << "\n\n";
@@ -291,7 +283,7 @@ CompletionResult OpenRouterAI::chat(
                 }
                 
                 result.content = reconstructed.str();
-                LOG_INFO("[OpenRouter] Reconstructed %zu native tool call(s) into JSON format",
+                LOG_INFO(" Reconstructed %zu native tool call(s) into JSON format",
                          tool_calls.size());
             }
         }
@@ -306,14 +298,14 @@ CompletionResult OpenRouterAI::chat(
         result.usage.total_tokens = usage.value("total_tokens", 0);
     }
     
-    LOG_DEBUG("[OpenRouter] === ◀ OUT AI Response ===");
-    LOG_DEBUG("[OpenRouter] ◀ OUT Model: %s, Stop reason: %s", result.model.c_str(), result.stop_reason.c_str());
-    LOG_DEBUG("[OpenRouter] ◀ OUT Tokens - Input: %d, Output: %d, Total: %d",
+    LOG_DEBUG("=== ◀ OUT AI Response ===");
+    LOG_DEBUG("◀ OUT Model: %s, Stop reason: %s", result.model.c_str(), result.stop_reason.c_str());
+    LOG_DEBUG("◀ OUT Tokens - Input: %d, Output: %d, Total: %d",
               result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens);
-    LOG_DEBUG("[OpenRouter] ◀ OUT Content (%zu chars): %.500s%s", 
+    LOG_DEBUG("◀ OUT Content (%zu chars): %.500s%s", 
               result.content.size(), result.content.c_str(),
               result.content.size() > 500 ? "..." : "");
-    LOG_DEBUG("[OpenRouter] === ◀ OUT End AI Response ===");
+    LOG_DEBUG("=== ◀ OUT End AI Response ===");
     
     return result;
 }
@@ -375,14 +367,14 @@ std::vector<ConversationMessage> OpenRouterAI::manage_context(
     
     // Debug: Log current context usage
     ContextUsage usage = context_manager_.estimate_usage(messages, system_prompt);
-    LOG_INFO("[OpenRouter] Context usage: %.1f%% (%zu/%zu chars, %zu messages)",
+    LOG_INFO(" Context usage: %.1f%% (%zu/%zu chars, %zu messages)",
              usage.usage_ratio * 100.0, usage.total_chars, usage.budget_chars, messages.size());
     
     // Check if we need a resume cycle
     if (context_manager_.needs_resume(messages, system_prompt)) {
-        ContextUsage usage = context_manager_.estimate_usage(messages, system_prompt);
-        LOG_WARN("[OpenRouter] Context at %.0f%% capacity (%zu/%zu chars), initiating resume cycle",
-                 usage.usage_ratio * 100.0, usage.total_chars, usage.budget_chars);
+        ContextUsage resume_usage = context_manager_.estimate_usage(messages, system_prompt);
+        LOG_WARN(" Context at %.0f%% capacity (%zu/%zu chars), initiating resume cycle",
+                 resume_usage.usage_ratio * 100.0, resume_usage.total_chars, resume_usage.budget_chars);
         
         // Perform the resume cycle: generate summary, save memory, wipe, reload
         std::vector<ConversationMessage> history_copy = messages;
@@ -390,12 +382,12 @@ std::vector<ConversationMessage> OpenRouterAI::manage_context(
             this, history_copy, system_prompt);
         
         if (ok) {
-            LOG_INFO("[OpenRouter] Resume cycle complete: %zu -> %zu messages",
+            LOG_INFO(" Resume cycle complete: %zu -> %zu messages",
                      messages.size(), history_copy.size());
             return history_copy;
         }
         
-        LOG_WARN("[OpenRouter] Resume cycle failed, falling back to simple truncation");
+        LOG_WARN(" Resume cycle failed, falling back to simple truncation");
     }
     
     // If context fits or resume failed, check if simple truncation is needed
@@ -407,7 +399,7 @@ std::vector<ConversationMessage> OpenRouterAI::manage_context(
     }
     
     // Fallback: truncate large individual messages
-    LOG_WARN("[OpenRouter] Fallback truncation: %zu chars > %zu budget", total_chars, budget);
+    LOG_WARN(" Fallback truncation: %zu chars > %zu budget", total_chars, budget);
     
     std::vector<ConversationMessage> trimmed = messages;
     const size_t max_single_msg = budget / 4;
@@ -460,7 +452,7 @@ std::vector<ConversationMessage> OpenRouterAI::manage_context(
         result.push_back(tail[i - 1]);
     }
     
-    LOG_INFO("[OpenRouter] Fallback trimmed from %zu to %zu messages",
+    LOG_INFO(" Fallback trimmed from %zu to %zu messages",
              messages.size(), result.size());
     
     return result;

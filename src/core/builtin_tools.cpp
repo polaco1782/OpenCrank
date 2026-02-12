@@ -433,9 +433,8 @@ AgentToolResult BuiltinToolsProvider::do_shell(const Json& params) const {
     
     // Security: Block dangerous patterns
     std::string lower_cmd = command;
-    for (auto& c : lower_cmd) {
-        c = std::tolower(static_cast<unsigned char>(c));
-    }
+    std::transform(lower_cmd.begin(), lower_cmd.end(), lower_cmd.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
     
     if (lower_cmd.find("rm -rf /") != std::string::npos ||
         lower_cmd.find("rm -rf ~") != std::string::npos ||

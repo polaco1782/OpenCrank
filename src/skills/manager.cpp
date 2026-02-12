@@ -34,14 +34,14 @@ void SkillManager::set_config(const SkillsConfig& config) {
 }
 
 std::vector<SkillEntry> SkillManager::load_workspace_skill_entries() {
-    LOG_INFO("[SkillManager] Loading workspace skill entries...");
-    LOG_DEBUG("[SkillManager] Loading workspace skill entries");
+    LOG_INFO(" Loading workspace skill entries...");
+    LOG_DEBUG("Loading workspace skill entries");
     std::map<std::string, SkillEntry> merged;
     
     // Precedence: extra < bundled < managed < workspace
     
     // 1. Load from extra directories
-    LOG_DEBUG("[SkillManager] Loading from %zu extra directories", config_.extra_dirs.size());
+    LOG_DEBUG("Loading from %zu extra directories", config_.extra_dirs.size());
     for (size_t i = 0; i < config_.extra_dirs.size(); ++i) {
         std::vector<SkillEntry> entries = load_entries_from_dir(
             config_.extra_dirs[i], "opencrank-extra");
@@ -52,10 +52,10 @@ std::vector<SkillEntry> SkillManager::load_workspace_skill_entries() {
     
     // 2. Load bundled skills
     if (!config_.bundled_skills_dir.empty()) {
-        LOG_DEBUG("[SkillManager] Loading bundled skills from: %s", config_.bundled_skills_dir.c_str());
+        LOG_DEBUG("Loading bundled skills from: %s", config_.bundled_skills_dir.c_str());
         std::vector<SkillEntry> entries = load_entries_from_dir(
             config_.bundled_skills_dir, "opencrank-bundled");
-        LOG_DEBUG("[SkillManager] Loaded %zu bundled skills", entries.size());
+        LOG_DEBUG("Loaded %zu bundled skills", entries.size());
         for (size_t j = 0; j < entries.size(); ++j) {
             merged[entries[j].skill.name] = entries[j];
         }
@@ -63,10 +63,10 @@ std::vector<SkillEntry> SkillManager::load_workspace_skill_entries() {
     
     // 3. Load managed skills
     if (!config_.managed_skills_dir.empty()) {
-        LOG_DEBUG("[SkillManager] Loading managed skills from: %s", config_.managed_skills_dir.c_str());
+        LOG_DEBUG("Loading managed skills from: %s", config_.managed_skills_dir.c_str());
         std::vector<SkillEntry> entries = load_entries_from_dir(
             config_.managed_skills_dir, "opencrank-managed");
-        LOG_DEBUG("[SkillManager] Loaded %zu managed skills", entries.size());
+        LOG_DEBUG("Loaded %zu managed skills", entries.size());
         for (size_t j = 0; j < entries.size(); ++j) {
             merged[entries[j].skill.name] = entries[j];
         }
@@ -75,10 +75,10 @@ std::vector<SkillEntry> SkillManager::load_workspace_skill_entries() {
     // 4. Load workspace skills (highest priority)
     if (!config_.workspace_dir.empty()) {
         std::string workspace_skills_dir = config_.workspace_dir + "/skills";
-        LOG_DEBUG("[SkillManager] Loading workspace skills from: %s", workspace_skills_dir.c_str());
+        LOG_DEBUG("Loading workspace skills from: %s", workspace_skills_dir.c_str());
         std::vector<SkillEntry> entries = load_entries_from_dir(
             workspace_skills_dir, "opencrank-workspace");
-        LOG_DEBUG("[SkillManager] Loaded %zu workspace skills", entries.size());
+        LOG_DEBUG("Loaded %zu workspace skills", entries.size());
         for (size_t j = 0; j < entries.size(); ++j) {
             merged[entries[j].skill.name] = entries[j];
         }
@@ -91,7 +91,7 @@ std::vector<SkillEntry> SkillManager::load_workspace_skill_entries() {
         result.push_back(it->second);
     }
     
-    LOG_DEBUG("[SkillManager] Total skills after merge: %zu", result.size());
+    LOG_DEBUG("Total skills after merge: %zu", result.size());
     return result;
 }
 
@@ -99,10 +99,10 @@ std::vector<SkillEntry> SkillManager::load_entries_from_dir(
     const std::string& dir,
     const std::string& source) {
     
-    LOG_INFO("[SkillManager] load_entries_from_dir called: dir='%s', source='%s'", dir.c_str(), source.c_str());
+    LOG_INFO(" load_entries_from_dir called: dir='%s', source='%s'", dir.c_str(), source.c_str());
     std::vector<SkillEntry> entries;
     std::vector<Skill> skills = loader_.load_from_dir(dir, source);
-    LOG_INFO("[SkillManager] load_from_dir returned %zu skills", skills.size());
+    LOG_INFO(" load_from_dir returned %zu skills", skills.size());
     
     for (size_t i = 0; i < skills.size(); ++i) {
         SkillEntry entry = loader_.build_entry(skills[i]);
@@ -118,21 +118,21 @@ std::vector<SkillEntry> SkillManager::filter_skill_entries(
     const std::vector<SkillEntry>& entries,
     const SkillEligibilityContext* eligibility) {
     
-    LOG_DEBUG("[SkillManager] Filtering %zu skill entries", entries.size());
+    LOG_DEBUG("Filtering %zu skill entries", entries.size());
     std::vector<SkillEntry> filtered;
     
     for (size_t i = 0; i < entries.size(); ++i) {
         if (should_include_skill(entries[i], eligibility)) {
-            LOG_DEBUG("[SkillManager] Including skill: %s", entries[i].skill.name.c_str());
+            LOG_DEBUG("Including skill: %s", entries[i].skill.name.c_str());
             filtered.push_back(entries[i]);
         } else {
-            LOG_DEBUG("[SkillManager] Filtering out skill: %s", entries[i].skill.name.c_str());
+            LOG_DEBUG("Filtering out skill: %s", entries[i].skill.name.c_str());
         }
     }
     
     // Apply skill filter if set
     if (!config_.skill_filter.empty()) {
-        LOG_DEBUG("[SkillManager] Applying skill filter with %zu allowed skills", config_.skill_filter.size());
+        LOG_DEBUG("Applying skill filter with %zu allowed skills", config_.skill_filter.size());
         std::set<std::string> filter_set(
             config_.skill_filter.begin(),
             config_.skill_filter.end());
@@ -143,11 +143,11 @@ std::vector<SkillEntry> SkillManager::filter_skill_entries(
                 final_filtered.push_back(filtered[i]);
             }
         }
-        LOG_DEBUG("[SkillManager] After filter: %zu skills", final_filtered.size());
+        LOG_DEBUG("After filter: %zu skills", final_filtered.size());
         return final_filtered;
     }
     
-    LOG_DEBUG("[SkillManager] Filter complete: %zu eligible skills", filtered.size());
+    LOG_DEBUG("Filter complete: %zu eligible skills", filtered.size());
     return filtered;
 }
 
@@ -168,7 +168,7 @@ bool SkillManager::should_include_skill(
             }
         }
         if (!os_match) {
-            LOG_DEBUG("[SkillManager]   ✗ %s: OS mismatch (requires %s, have %s)", 
+            LOG_DEBUG("  ✗ %s: OS mismatch (requires %s, have %s)", 
                      entry.skill.name.c_str(), meta.os[0].c_str(), current_os.c_str());
             return false;
         }
@@ -187,7 +187,7 @@ bool SkillManager::should_include_skill(
                 found = has_binary(reqs.bins[i]);
             }
             if (!found) {
-                LOG_DEBUG("[SkillManager]   ✗ %s: missing required binary '%s'", 
+                LOG_DEBUG("  ✗ %s: missing required binary '%s'", 
                          entry.skill.name.c_str(), reqs.bins[i].c_str());
                 return false;
             }
@@ -215,7 +215,7 @@ bool SkillManager::should_include_skill(
                 if (i > 0) bins_list += ", ";
                 bins_list += reqs.any_bins[i];
             }
-            LOG_DEBUG("[SkillManager]   ✗ %s: none of required binaries found: %s", 
+            LOG_DEBUG("  ✗ %s: none of required binaries found: %s", 
                      entry.skill.name.c_str(), bins_list.c_str());
             return false;
         }
@@ -225,7 +225,7 @@ bool SkillManager::should_include_skill(
     if (!reqs.env.empty()) {
         for (size_t i = 0; i < reqs.env.size(); ++i) {
             if (!has_env(reqs.env[i])) {
-                LOG_DEBUG("[SkillManager]   ✗ %s: missing required env var '%s'", 
+                LOG_DEBUG("  ✗ %s: missing required env var '%s'", 
                          entry.skill.name.c_str(), reqs.env[i].c_str());
                 return false;
             }
@@ -259,7 +259,7 @@ SkillSnapshot SkillManager::build_workspace_skill_snapshot(
         if (!eligible[i].invocation.disable_model_invocation) {
             prompt_entries.push_back(eligible[i]);
         } else {
-            LOG_DEBUG("[SkillManager] Excluding %s from prompt (model invocation disabled)", 
+            LOG_DEBUG("Excluding %s from prompt (model invocation disabled)", 
                      eligible[i].skill.name.c_str());
         }
     }
@@ -309,18 +309,18 @@ std::string SkillManager::build_workspace_skills_prompt(
 
 std::string SkillManager::format_skills_for_prompt(const std::vector<Skill>& skills) {
     if (skills.empty()) {
-        LOG_DEBUG("[SkillManager] No skills to format for prompt");
+        LOG_DEBUG("No skills to format for prompt");
         return "";
     }
     
-    LOG_DEBUG("[SkillManager] Formatting %zu skills for AI prompt", skills.size());
+    LOG_DEBUG("Formatting %zu skills for AI prompt", skills.size());
     
     std::ostringstream oss;
     oss << "<available_skills>\n";
     
     for (size_t i = 0; i < skills.size(); ++i) {
         const Skill& skill = skills[i];
-        LOG_DEBUG("[SkillManager]   Adding skill to prompt: %s (location: %s)", 
+        LOG_DEBUG("  Adding skill to prompt: %s (location: %s)", 
                  skill.name.c_str(), skill.file_path.c_str());
         oss << "<skill name=\"" << skill.name << "\" location=\"" << skill.file_path << "\">\n";
         oss << "  <description>" << skill.description << "</description>\n";
@@ -332,7 +332,7 @@ std::string SkillManager::format_skills_for_prompt(const std::vector<Skill>& ski
 }
 
 std::string SkillManager::build_skill_instructions(bool /* include_skills_xml */) {
-    LOG_DEBUG("[SkillManager] Building skill instructions for AI prompt");
+    LOG_DEBUG("Building skill instructions for AI prompt");
     
     std::ostringstream oss;
     
@@ -361,18 +361,18 @@ std::string SkillManager::build_skill_instructions(bool /* include_skills_xml */
     oss << "3. Follow the instructions in SKILL.md (e.g., use shell tool with python3 command)\n";
     oss << "4. Return the result to the user\n\n";
     
-    LOG_DEBUG("[SkillManager] Built skill instructions (%zu bytes)", oss.str().size());
+    LOG_DEBUG("Built skill instructions (%zu bytes)", oss.str().size());
     return oss.str();
 }
 
 std::string SkillManager::build_skills_section(const std::vector<SkillEntry>* entries) {
-    LOG_DEBUG("[SkillManager] Building full skills section for system prompt");
+    LOG_DEBUG("Building full skills section for system prompt");
     
     // Get the skills XML
     std::string skills_xml = build_workspace_skills_prompt(entries, NULL);
     
     if (skills_xml.empty()) {
-        LOG_DEBUG("[SkillManager] No skills available, returning empty section");
+        LOG_DEBUG("No skills available, returning empty section");
         return "";  // No skills, no section
     }
     
@@ -383,9 +383,9 @@ std::string SkillManager::build_skills_section(const std::vector<SkillEntry>* en
     oss << skills_xml;
     
     std::string result = oss.str();
-    LOG_INFO("[SkillManager] Built skills section with %zu skills", 
+    LOG_INFO(" Built skills section with %zu skills", 
              entries ? entries->size() : 0);
-    LOG_DEBUG("[SkillManager] Skills section:\n%s", result.c_str());
+    LOG_DEBUG("Skills section:\n%s", result.c_str());
     
     return result;
 }
@@ -665,7 +665,7 @@ std::pair<const SkillCommandSpec*, std::string> SkillManager::resolve_skill_comm
         return result;
     }
 
-    LOG_DEBUG("[SkillManager] Resolving skill command invocation for input: %s", user_input.c_str());
+    LOG_DEBUG("Resolving skill command invocation for input: %s", user_input.c_str());
     
     // Trim input
     std::string input = user_input;

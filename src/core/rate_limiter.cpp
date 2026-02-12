@@ -110,20 +110,10 @@ RateLimitResult KeyedRateLimiter::check(const std::string& key) {
     last_activity_[key] = current_timestamp();
     
     if (type_ == TOKEN_BUCKET) {
-        std::map<std::string, TokenBucketLimiter>::iterator it = token_limiters_.find(key);
-        if (it == token_limiters_.end()) {
-            token_limiters_.insert(std::make_pair(key, 
-                TokenBucketLimiter(limit_, window_or_rate_)));
-            it = token_limiters_.find(key);
-        }
+        auto [it, inserted] = token_limiters_.try_emplace(key, limit_, window_or_rate_);
         return it->second.try_acquire();
     } else {
-        std::map<std::string, SlidingWindowLimiter>::iterator it = window_limiters_.find(key);
-        if (it == window_limiters_.end()) {
-            window_limiters_.insert(std::make_pair(key,
-                SlidingWindowLimiter(limit_, window_or_rate_)));
-            it = window_limiters_.find(key);
-        }
+        auto [it, inserted] = window_limiters_.try_emplace(key, limit_, window_or_rate_);
         return it->second.try_acquire();
     }
 }

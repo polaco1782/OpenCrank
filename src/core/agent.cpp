@@ -72,7 +72,7 @@ static JsonParseResult try_parse_json(const std::string& raw) {
 
     // Recovery: strip code fences and extract first JSON object
     std::string cleaned = raw;
-    size_t fence_pos = std::string::npos;
+    size_t fence_pos;
     while ((fence_pos = cleaned.find("```")) != std::string::npos) {
         cleaned.erase(fence_pos, 3);
     }
@@ -130,7 +130,7 @@ static JsonParseResult try_parse_json(const std::string& raw) {
                     // Ending a string - but is this really the end or an unescaped quote?
                     // If we're in a value string and the next non-whitespace char is not , or },
                     // this might be an unescaped internal quote
-                    if (!in_key && in_string) {
+                    if (!in_key) {
                         size_t next_char = i + 1;
                         while (next_char < fixed.size() && 
                                (fixed[next_char] == ' ' || fixed[next_char] == '\t' || 
@@ -163,7 +163,7 @@ static JsonParseResult try_parse_json(const std::string& raw) {
             res.ok = true;
             res.used = fixed;
             res.error.clear();
-            LOG_DEBUG("[Agent] JSON recovery: auto-escaped internal quotes");
+            LOG_DEBUG("JSON recovery: auto-escaped internal quotes");
             return res;
         } catch (const std::exception& e) {
             // Recovery failed, keep original error
@@ -311,7 +311,7 @@ Agent::Agent() {}
 Agent::~Agent() {}
 
 void Agent::register_tool(const AgentTool& tool) {
-    LOG_DEBUG("[Agent] Registering tool: %s", tool.name.c_str());
+    LOG_DEBUG("Registering tool: %s", tool.name.c_str());
     tools_[tool.name] = tool;
 }
 
@@ -363,7 +363,7 @@ std::string Agent::build_tools_prompt() const {
          it != tools_.end(); ++it) {
         const AgentTool& tool = it->second;
         oss << "**" << tool.name << "**: " << tool.description << "\n";
-        LOG_DEBUG("[Agent] Tool '%s' has %zu parameters", tool.name.c_str(), tool.params.size());
+        LOG_DEBUG("Tool '%s' has %zu parameters", tool.name.c_str(), tool.params.size());
         
         if (!tool.params.empty()) {
             oss << "  Parameters:\n";
@@ -373,7 +373,7 @@ std::string Agent::build_tools_prompt() const {
                 if (param.required) oss << ", required";
                 oss << "): " << param.description << "\n";
 
-                LOG_DEBUG("[Agent] Tool '%s' parameter '%s': type=%s, required=%s", 
+                LOG_DEBUG("Tool '%s' parameter '%s': type=%s, required=%s", 
                           tool.name.c_str(), param.name.c_str(), param.type.c_str(), 
                           param.required ? "true" : "false");
             }
@@ -442,12 +442,12 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
         }
         
         std::string candidate = response.substr(brace_start, scan - brace_start);
-        LOG_DEBUG("[Agent] Found candidate JSON at position %zu (length=%zu)", brace_start, candidate.size());
+        LOG_DEBUG("Found candidate JSON at position %zu (length=%zu)", brace_start, candidate.size());
         
         // Try to parse the JSON
         JsonParseResult parsed = try_parse_json(candidate);
         if (!parsed.ok) {
-            LOG_DEBUG("[Agent] Candidate JSON parse failed: %s", parsed.error.c_str());
+            LOG_DEBUG("Candidate JSON parse failed: %s", parsed.error.c_str());
             pos = brace_start + 1;
             continue;
         }
@@ -460,12 +460,12 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
         
         std::string tool_name = parsed.value.value("tool", std::string(""));
         if (tool_name.empty()) {
-            LOG_DEBUG("[Agent] JSON has 'tool' key but empty value, skipping");
+            LOG_DEBUG("JSON has 'tool' key but empty value, skipping");
             pos = scan;
             continue;
         }
         
-        LOG_DEBUG("[Agent] Found JSON tool call: '%s'", tool_name.c_str());
+        LOG_DEBUG("Found JSON tool call: '%s'", tool_name.c_str());
         
         ParsedToolCall call;
         call.tool_name = tool_name;
@@ -477,7 +477,7 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
         if (parsed.value.contains("arguments") && parsed.value["arguments"].is_object()) {
             call.params = parsed.value["arguments"];
             call.valid = true;
-            LOG_DEBUG("[Agent] Parsed arguments for '%s': %s", 
+            LOG_DEBUG("Parsed arguments for '%s': %s", 
                       tool_name.c_str(), call.params.dump().c_str());
         } else if (parsed.value.contains("arguments") && parsed.value["arguments"].is_string()) {
             // Sometimes models put a JSON string in arguments - try to parse it
@@ -486,11 +486,11 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
             if (args_parsed.ok && args_parsed.value.is_object()) {
                 call.params = args_parsed.value;
                 call.valid = true;
-                LOG_DEBUG("[Agent] Parsed stringified arguments for '%s'", tool_name.c_str());
+                LOG_DEBUG("Parsed stringified arguments for '%s'", tool_name.c_str());
             } else {
                 call.valid = false;
                 call.parse_error = "Arguments field is a string but not valid JSON: " + args_str;
-                LOG_WARN("[Agent] Failed to parse stringified arguments for '%s'", tool_name.c_str());
+                LOG_WARN(" Failed to parse stringified arguments for '%s'", tool_name.c_str());
             }
         } else {
             // Extract top-level parameters (excluding "tool")
@@ -501,10 +501,10 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
                 }
             }
             if (!call.params.empty()) {
-                LOG_DEBUG("[Agent] Extracted top-level params for '%s': %s", 
+                LOG_DEBUG("Extracted top-level params for '%s': %s", 
                           tool_name.c_str(), call.params.dump().c_str());
             } else {
-                LOG_DEBUG("[Agent] No arguments for '%s', using empty params", tool_name.c_str());
+                LOG_DEBUG("No arguments for '%s', using empty params", tool_name.c_str());
             }
             call.valid = true;
         }
@@ -512,7 +512,7 @@ std::vector<ParsedToolCall> Agent::parse_tool_calls(const std::string& response)
         calls.push_back(call);
         pos = scan;
         
-        LOG_DEBUG("[Agent] Parsed tool call: %s (valid=%s)", 
+        LOG_DEBUG("Parsed tool call: %s (valid=%s)", 
                   tool_name.c_str(), call.valid ? "yes" : "no");
     }
     
@@ -551,7 +551,7 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
         if (recover_params_from_raw(it->second, effective_call.raw_content, recovered, recover_error)) {
             effective_call.params = recovered;
             effective_call.valid = true;
-            LOG_DEBUG("[Agent] Recovered tool params for '%s' from raw content", call.tool_name.c_str());
+            LOG_DEBUG("Recovered tool params for '%s' from raw content", call.tool_name.c_str());
         } else {
             // Provide helpful error message with escaping guidance
             std::ostringstream error_msg;
@@ -574,21 +574,21 @@ AgentToolResult Agent::execute_tool(const ParsedToolCall& call) {
         }
     }
     
-    LOG_INFO("[Agent] ▶ TOOL Executing: %s", call.tool_name.c_str());
-    LOG_DEBUG("[Agent] ▶ TOOL Params: %s", effective_call.params.dump().c_str());
-    LOG_DEBUG("[Agent] ▶ TOOL Raw content: %s", effective_call.raw_content.c_str());
+    LOG_INFO(" ▶ TOOL Executing: %s", call.tool_name.c_str());
+    LOG_DEBUG("▶ TOOL Params: %s", effective_call.params.dump().c_str());
+    LOG_DEBUG("▶ TOOL Raw content: %s", effective_call.raw_content.c_str());
     
     try {
         // Log parameters just before execution
-        LOG_DEBUG("[Agent] About to execute tool with params: %s", effective_call.params.dump().c_str());
+        LOG_DEBUG("About to execute tool with params: %s", effective_call.params.dump().c_str());
         
         AgentToolResult result = it->second.execute(effective_call.params);
-        LOG_DEBUG("[Agent] ◀ TOOL %s result: success=%s, output_len=%zu",
+        LOG_DEBUG("◀ TOOL %s result: success=%s, output_len=%zu",
                   call.tool_name.c_str(), result.success ? "yes" : "no", 
                   result.output.size());
         return result;
     } catch (const std::exception& e) {
-        LOG_ERROR("[Agent] Tool %s threw exception: %s", call.tool_name.c_str(), e.what());
+        LOG_ERROR(" Tool %s threw exception: %s", call.tool_name.c_str(), e.what());
         return AgentToolResult::fail(std::string("Tool exception: ") + e.what());
     }
 }
@@ -605,7 +605,7 @@ std::string Agent::format_tool_result(const std::string& tool_name, const AgentT
             std::string chunk_id = chunker_.store(result.output, tool_name, config_.effective_chunk_size());
             size_t total_chunks = chunker_.get_total_chunks(chunk_id);
             
-            LOG_INFO("[Agent] Large tool result (%zu bytes) chunked as '%s' (%zu chunks)",
+            LOG_INFO(" Large tool result (%zu bytes) chunked as '%s' (%zu chunks)",
                      result.output.size(), chunk_id.c_str(), total_chunks);
             
             // Return a summary with the first chunk
@@ -687,7 +687,7 @@ bool Agent::try_truncate_history(std::vector<ConversationMessage>& history) cons
         return false;
     }
     
-    LOG_INFO("[Agent] Attempting to truncate history to fit context window (current: %zu messages)",
+    LOG_INFO(" Attempting to truncate history to fit context window (current: %zu messages)",
              history.size());
     
     // Strategy 1: Find and truncate large tool_result messages
@@ -734,7 +734,7 @@ bool Agent::try_truncate_history(std::vector<ConversationMessage>& history) cons
                     }
                     truncated << "\n[/TOOL_RESULT]";
                     
-                    LOG_DEBUG("[Agent] Truncated tool result for '%s' from %zu to %zu chars",
+                    LOG_DEBUG("Truncated tool result for '%s' from %zu to %zu chars",
                               tool_name.c_str(), msg.content.size(), truncated.str().size());
                     
                     msg.content = truncated.str();
@@ -745,7 +745,7 @@ bool Agent::try_truncate_history(std::vector<ConversationMessage>& history) cons
     }
     
     if (truncated_something) {
-        LOG_INFO("[Agent] Truncated large tool results in history");
+        LOG_INFO(" Truncated large tool results in history");
         return true;
     }
     
@@ -785,7 +785,7 @@ bool Agent::try_truncate_history(std::vector<ConversationMessage>& history) cons
             last_role = history[i].role;
         }
         
-        LOG_INFO("[Agent] Reduced history from %zu to %zu messages", 
+        LOG_INFO(" Reduced history from %zu to %zu messages", 
                  history.size(), new_history.size());
         
         history = new_history;
@@ -811,11 +811,11 @@ AgentResult Agent::run(
         return result;
     }
     
-    LOG_INFO("[Agent] Starting agentic loop (max_iterations=%d, tools=%zu)",
+    LOG_INFO(" Starting agentic loop (max_iterations=%d, tools=%zu)",
              config.max_iterations, tools_.size());
-    LOG_DEBUG("[Agent] ▶ IN  User message (%zu chars): %.100s%s", 
+    LOG_DEBUG("▶ IN  User message (%zu chars): %.100s%s", 
               user_message.size(), user_message.c_str(), user_message.size() > 100 ? "..." : "");
-    LOG_DEBUG("[Agent] ▶ IN  System prompt: %zu chars", system_prompt.size());
+    LOG_DEBUG("▶ IN  System prompt: %zu chars", system_prompt.size());
     
     // Track initial history size so we can restore on failure
     size_t initial_history_size = history.size();
@@ -824,11 +824,14 @@ AgentResult Agent::run(
     history.push_back(ConversationMessage::user(user_message));
     
     // Build full system prompt with tools
-    std::string full_system_prompt = system_prompt;
+    std::string full_system_prompt = AppInfo::default_system_prompt();
     std::string tools_prompt = build_tools_prompt();
     if (!tools_prompt.empty()) {
-        full_system_prompt = tools_prompt + "\n\n" + system_prompt;
+        full_system_prompt += "\n\n" + tools_prompt;
     }
+
+    LOG_DEBUG("Full system prompt length: %zu chars", full_system_prompt.size());
+    LOG_DEBUG("Full system prompt content:\n%s", full_system_prompt.c_str());
     
     int consecutive_errors = 0;
     int token_limit_retries = 0;
@@ -842,8 +845,8 @@ AgentResult Agent::run(
     // Agentic loop
     while (result.iterations < config.max_iterations) {
         result.iterations++;
-        LOG_DEBUG("[Agent] === Iteration %d/%d ===", result.iterations, config.max_iterations);
-        LOG_DEBUG("[Agent] ▶ IN  Sending %zu messages to AI (history size: %zu)",
+        LOG_DEBUG("=== Iteration %d/%d ===", result.iterations, config.max_iterations);
+        LOG_DEBUG("▶ IN  Sending %zu messages to AI (history size: %zu)",
                   history.size(), history.size());
         
         // Call AI
@@ -854,22 +857,22 @@ AgentResult Agent::run(
         CompletionResult ai_result = ai->chat(history, opts);
         
         if (!ai_result.success) {
-            LOG_ERROR("[Agent] ◀ OUT AI call failed: %s", ai_result.error.c_str());
+            LOG_ERROR(" ◀ OUT AI call failed: %s", ai_result.error.c_str());
             
             // Check if this is a token limit error
             if (is_token_limit_error(ai_result.error)) {
                 token_limit_retries++;
-                LOG_WARN("[Agent] Token limit exceeded (attempt %d/%d), trying to recover...",
+                LOG_WARN(" Token limit exceeded (attempt %d/%d), trying to recover...",
                          token_limit_retries, max_token_limit_retries);
                 
                 if (token_limit_retries <= max_token_limit_retries) {
                     // Try to truncate history and retry
                     if (try_truncate_history(history)) {
-                        LOG_INFO("[Agent] History truncated, retrying...");
+                        LOG_INFO(" History truncated, retrying...");
                         consecutive_errors = 0;  // Reset error count for this recovery attempt
                         continue;
                     } else {
-                        LOG_WARN("[Agent] Could not truncate history further");
+                        LOG_WARN(" Could not truncate history further");
                     }
                 }
                 
@@ -884,7 +887,7 @@ AgentResult Agent::run(
             
             consecutive_errors++;
             if (consecutive_errors >= config.max_consecutive_errors) {
-                LOG_WARN("[Agent] Reached max consecutive errors (%d) - pausing for user decision",
+                LOG_WARN(" Reached max consecutive errors (%d) - pausing for user decision",
                          config.max_consecutive_errors);
                 result.success = false;
                 result.paused = true;
@@ -917,7 +920,7 @@ AgentResult Agent::run(
         token_limit_retries = 0;  // Reset on successful call
         std::string response = ai_result.content;
         
-        LOG_DEBUG("[Agent] ◀ OUT AI response (%zu chars): %.300s%s", 
+        LOG_DEBUG("◀ OUT AI response (%zu chars): %.300s%s", 
                   response.size(), response.c_str(), 
                   response.size() > 300 ? "..." : "");
         
@@ -941,7 +944,7 @@ AgentResult Agent::run(
                  response_lower.find("would you") != std::string::npos ||
                  response_lower.find("do you want") != std::string::npos)) {
                 is_asking_question = true;
-                LOG_DEBUG("[Agent] AI is asking a question, not forcing tool call");
+                LOG_DEBUG("AI is asking a question, not forcing tool call");
             }
             
             // Patterns that indicate the AI wants to use a tool NOW
@@ -982,18 +985,18 @@ AgentResult Agent::run(
                 "i'll search",
                 "i'll make",
                 "i'll use",
-                "i will create",
-                "i will write",
-                "i will run",
-                "i need to create",
-                "i need to write",
-                "i need to read",
-                "i need to check",
-                "i need to run",
-                "i need to fetch",
-                "i need to browse",
-                "i need to search",
-                "i need to make",
+                "will create",
+                "will write",
+                "will run",
+                "need to create",
+                "need to write",
+                "need to read",
+                "need to check",
+                "need to run",
+                "need to fetch",
+                "need to browse",
+                "need to search",
+                "need to make",
                 "now i'll",
                 "now let me",
                 "let's do that",
@@ -1006,35 +1009,133 @@ AgentResult Agent::run(
                 "let's fetch",
                 "let's search",
                 "let's make",
-                "i should check",
-                "i should write",
-                "i should run", 
-                "i should do",
-                "i should use the",
+                "should check",
+                "should write",
+                "should run", 
+                "should do",
+                "should use the",
                 "i'll do that",
                 "doing that now",
                 "executing now",
                 "running the command now",
                 "let's execute it",
                 "i'll emit the tool call",
-                "i need to emit",
+                "need to emit",
                 "emitting tool call",
                 "calling the tool",
-                "i can handle using the",
+                "can handle using the",
+                "going to create",
+                "going to write",
+                "going to read",
+                "going to check",
+                "going to look",
+                "going to search",
+                "going to fetch",
+                "going to browse",
+                "going to run",
+                "going to execute",
+                "going to try",
+                "going to make",
+                "going to update",
+                "going to modify",
+                "going to delete",
+                "going to remove",
+                "going to add",
+                "going to open",
+                "going to download",
+                "going to get",
+                "going to see",
+                "going to find",
+                "going to use",
+                "going to install",
+                "about to create",
+                "about to write",
+                "about to read",
+                "about to check",
+                "about to look",
+                "about to search",
+                "about to fetch",
+                "about to browse",
+                "about to run",
+                "about to execute",
+                "about to try",
+                "about to make",
+                "about to update",
+                "about to modify",
+                "about to delete",
+                "about to remove",
+                "about to add",
+                "about to open",
+                "about to download",
+                "about to get",
+                "about to see",
+                "about to find",
+                "about to use",
+                "about to install",
+                "plan to create",
+                "plan to write",
+                "plan to run",
+                "want to create",
+                "want to write",
+                "want to run",
+                "ready to create",
+                "ready to write",
+                "ready to run",
+                "preparing to create",
+                "preparing to write",
+                "preparing to run",
+                "creating now",
+                "writing now",
+                "reading now",
+                "checking now",
+                "looking now",
+                "searching now",
+                "fetching now",
+                "browsing now",
+                "running now",
+                "executing now",
+                "trying now",
+                "making now",
+                "updating now",
+                "modifying now",
+                "deleting now",
+                "removing now",
+                "adding now",
+                "opening now",
+                "downloading now",
+                "getting now",
+                "seeing now",
+                "finding now",
+                "using now",
+                "installing now",
+                "time to create",
+                "time to write",
+                "time to run",
+                "let's get started with",
+                "starting to",
+                "beginning to",
+                "commencing to",
+                "initiating",
+                "launching",
+                "starting the",
+                "beginning the",
+                "commencing the",
+                "initiating the",
+                "launching the",
                 NULL
             };
             
             for (int i = 0; intent_patterns[i] != NULL && !is_asking_question; ++i) {
                 if (response_lower.find(intent_patterns[i]) != std::string::npos) {
                     indicates_tool_intent = true;
-                    LOG_DEBUG("[Agent] Detected tool intent pattern: '%s'", intent_patterns[i]);
+                    LOG_DEBUG("Detected tool intent pattern: '%s'", intent_patterns[i]);
                     break;
                 }
             }
             
             // If AI indicated intent but no tool call, prompt it to actually emit the call
             if (indicates_tool_intent && !is_asking_question && result.iterations < config.max_iterations) {
-                LOG_INFO("[Agent] ▶ IN  AI indicated tool intent, sending continuation prompt");
+                LOG_INFO(" ▶ IN  AI indicated tool intent, sending continuation prompt");
                 
                 // Add the AI's response to history
                 history.push_back(ConversationMessage::assistant(response));
@@ -1051,7 +1152,7 @@ AgentResult Agent::run(
             }
             
             // No tool calls and no intent - we're done
-            LOG_INFO("[Agent] ◀ OUT Final response after %d iterations (%d tool calls)", 
+            LOG_INFO(" ◀ OUT Final response after %d iterations (%d tool calls)", 
                      result.iterations, result.tool_calls_made);
             
             // Add final response to history
@@ -1063,7 +1164,7 @@ AgentResult Agent::run(
         }
         
         // Execute tool calls and build results
-        LOG_INFO("[Agent] ◀ OUT AI requested %zu tool call(s)", calls.size());
+        LOG_INFO(" ◀ OUT AI requested %zu tool call(s)", calls.size());
         
         std::ostringstream results_oss;
         bool should_continue = true;
@@ -1080,7 +1181,7 @@ AgentResult Agent::run(
             
             // Skip exact duplicates within the same response
             if (seen_in_response.count(dedup_key)) {
-                LOG_WARN("[Agent] Skipping duplicate tool call in same response: %s",
+                LOG_WARN(" Skipping duplicate tool call in same response: %s",
                          call.tool_name.c_str());
                 results_oss << "[TOOL_RESULT tool=" << call.tool_name 
                             << " success=true]\n"
@@ -1094,11 +1195,11 @@ AgentResult Agent::run(
             std::map<std::string, int>::iterator prev = recent_tool_calls.find(dedup_key);
             if (prev != recent_tool_calls.end()) {
                 int prev_iter = prev->second;
-                LOG_WARN("[Agent] Tool '%s' called with same params as iteration %d (now %d)",
+                LOG_WARN(" Tool '%s' called with same params as iteration %d (now %d)",
                          call.tool_name.c_str(), prev_iter, result.iterations);
                 // If called in the immediately previous iteration with same params, skip
                 if (prev_iter == result.iterations - 1) {
-                    LOG_WARN("[Agent] Skipping repeated tool call from consecutive iteration: %s",
+                    LOG_WARN(" Skipping repeated tool call from consecutive iteration: %s",
                              call.tool_name.c_str());
                     results_oss << "[TOOL_RESULT tool=" << call.tool_name 
                                 << " success=true]\n"
@@ -1118,7 +1219,29 @@ AgentResult Agent::run(
                 result.tools_used.push_back(call.tool_name);
             }
             
-            AgentToolResult tool_result = execute_tool(call);
+            // Execute tool with retry logic
+            const int max_tool_retries = 3;
+            AgentToolResult tool_result;
+            int retry_count = 0;
+            bool tool_success = false;
+            
+            while (retry_count < max_tool_retries && !tool_success) {
+                tool_result = execute_tool(call);
+                if (tool_result.success) {
+                    tool_success = true;
+                } else {
+                    retry_count++;
+                    if (retry_count < max_tool_retries) {
+                        LOG_WARN(" Tool %s failed (attempt %d/%d): %s - retrying...",
+                                 call.tool_name.c_str(), retry_count, max_tool_retries, 
+                                 tool_result.error.c_str());
+                    } else {
+                        LOG_ERROR(" Tool %s failed after %d attempts: %s",
+                                  call.tool_name.c_str(), max_tool_retries, 
+                                  tool_result.error.c_str());
+                    }
+                }
+            }
             
             if (!tool_result.should_continue) {
                 should_continue = false;
@@ -1135,14 +1258,14 @@ AgentResult Agent::run(
         
         // Add tool results as a user message (this continues the conversation)
         std::string tool_results = results_oss.str();
-        LOG_DEBUG("[Agent] ▶ IN  Feeding tool results back to AI (%zu chars)", tool_results.size());
-        LOG_DEBUG("[Agent] ▶ IN  Tool results preview: %.500s%s", tool_results.c_str(),
+        LOG_DEBUG("▶ IN  Feeding tool results back to AI (%zu chars)", tool_results.size());
+        LOG_DEBUG("▶ IN  Tool results preview: %.500s%s", tool_results.c_str(),
                   tool_results.size() > 500 ? "..." : "");
         
         history.push_back(ConversationMessage::user(tool_results));
         
         if (!should_continue) {
-            LOG_INFO("[Agent] Tool requested stop, ending loop");
+            LOG_INFO(" Tool requested stop, ending loop");
             result.success = true;
             result.final_response = text_response.empty() ? "Task completed." : text_response;
             return result;
@@ -1158,7 +1281,7 @@ AgentResult Agent::run(
     }
     
     // Reached max iterations - pause instead of stopping
-    LOG_WARN("[Agent] Reached max iterations (%d) - pausing for user confirmation", config.max_iterations);
+    LOG_WARN(" Reached max iterations (%d) - pausing for user confirmation", config.max_iterations);
     result.success = false;  // Not completed yet
     result.paused = true;
     

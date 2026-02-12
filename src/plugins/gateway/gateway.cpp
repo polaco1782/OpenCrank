@@ -33,7 +33,7 @@ namespace opencrank {
 
 class WebSocketServer {
 public:
-    WebSocketServer(GatewayPlugin* plugin) 
+    explicit WebSocketServer(GatewayPlugin* plugin) 
         : plugin_(plugin)
         , port_(0)
         , running_(false)
@@ -88,7 +88,7 @@ public:
         }
     }
     
-    void poll(int /* timeout_ms */ = 10) {
+    static void poll(int /* timeout_ms */ = 10) {
         // Crow handles its own event loop in the background thread
         // Nothing to do here - kept for API compatibility
     }
@@ -114,12 +114,12 @@ private:
                 res.body = buffer.str();
                 html_file.close();
 
-                LOG_DEBUG("[Gateway] Served control UI to HTTP client");
+                LOG_DEBUG("Served control UI to HTTP client");
             }
             else {
                 res.code = 404;
                 res.body = "404 Not Found";
-                LOG_WARN("[Gateway] Control UI HTML file not found");
+                LOG_WARN(" Control UI HTML file not found");
             }
 
             return res;
@@ -153,7 +153,7 @@ private:
         }
         
         plugin_->handle_client_connect(client);
-        LOG_DEBUG("[Gateway] WebSocket client connected: %s", conn_id.c_str());
+        LOG_DEBUG("WebSocket client connected: %s", conn_id.c_str());
     }
     
     void on_ws_close(crow::websocket::connection& conn, const std::string& reason) {
@@ -169,7 +169,7 @@ private:
         }
         
         if (client) {
-            LOG_DEBUG("[Gateway] WebSocket client disconnected: %s (reason: %s)", 
+            LOG_DEBUG("WebSocket client disconnected: %s (reason: %s)", 
                      client->conn_id().c_str(), reason.c_str());
             plugin_->handle_client_disconnect(client);
             delete client;
@@ -391,7 +391,7 @@ void GatewayPlugin::broadcast(const std::string& event, const Json& payload) {
     
     std::string data = message.dump();
     
-    LOG_DEBUG("[Gateway] ◀ OUT Broadcasting event '%s' to %zu clients (%zu bytes)", 
+    LOG_DEBUG("◀ OUT Broadcasting event '%s' to %zu clients (%zu bytes)", 
               event.c_str(), clients_.size(), data.size());
     
     for (auto it = clients_.begin(); it != clients_.end(); ++it) {
@@ -409,7 +409,7 @@ void GatewayPlugin::send_typing_event(const std::string& channel_id,
     
     broadcast("chat.typing", payload);
     
-    LOG_DEBUG("[Gateway] Sent typing=%s event for %s:%s to %zu clients", 
+    LOG_DEBUG("Sent typing=%s event for %s:%s to %zu clients", 
               typing ? "true" : "false", channel_id.c_str(), chat_id.c_str(), clients_.size());
 }
 
@@ -450,7 +450,7 @@ void GatewayPlugin::handle_client_message(GatewayClient* client,
     
     std::string type = request.value("type", std::string(""));
     
-    LOG_DEBUG("[Gateway] ▶ IN  WS message from %s: type=%s", 
+    LOG_DEBUG("▶ IN  WS message from %s: type=%s", 
               client->conn_id().c_str(), type.c_str());
     
     // Handle different message types
@@ -508,7 +508,7 @@ void GatewayPlugin::handle_client_message(GatewayClient* client,
     
     // Send response
     if (response.is_object()) {
-        LOG_DEBUG("[Gateway] ◀ OUT WS response to %s: type=%s", 
+        LOG_DEBUG("◀ OUT WS response to %s: type=%s", 
                   client->conn_id().c_str(), 
                   response.value("type", std::string("unknown")).c_str());
         client->send_json(response);
@@ -607,7 +607,7 @@ Json GatewayPlugin::handle_chat_send(GatewayClient* client, const Json& params) 
     std::string text = params.value("text", std::string(""));
     std::string reply_to = params.value("reply_to", std::string(""));
 
-    LOG_INFO("[Gateway] ▶ IN  chat.send from %s: text=%.100s%s", 
+    LOG_INFO(" ▶ IN  chat.send from %s: text=%.100s%s", 
              client->conn_id().c_str(), text.c_str(),
              text.size() > 100 ? "..." : "");
 
@@ -625,7 +625,7 @@ Json GatewayPlugin::handle_chat_send(GatewayClient* client, const Json& params) 
         msg.reply_to_id = reply_to;
     }
 
-    LOG_DEBUG("[Gateway] ▶ IN  Creating message for AI processing: from=%s to=%s, text_len=%zu", 
+    LOG_DEBUG("▶ IN  Creating message for AI processing: from=%s to=%s, text_len=%zu", 
               msg.from.c_str(), msg.to.c_str(), msg.text.size());
 
     // Fire the message through the channel callback (inherited from ChannelPlugin)
@@ -678,7 +678,7 @@ void GatewayPlugin::route_incoming_message(const Message& msg) {
         event_payload["media_url"] = msg.media_url;
     }
     
-    LOG_DEBUG("[Gateway] ◀ OUT Routing incoming message to %zu WS clients: from=%s, text=%.100s%s", 
+    LOG_DEBUG("◀ OUT Routing incoming message to %zu WS clients: from=%s, text=%.100s%s", 
               clients_.size(), msg.from_name.c_str(), msg.text.c_str(),
               msg.text.size() > 100 ? "..." : "");
     
@@ -702,7 +702,7 @@ void GatewayPlugin::on_incoming_message(const Message& msg) {
         notif_payload["from"] = msg.from_name;
         notif_payload["timestamp"] = static_cast<int>(msg.timestamp);
         
-        LOG_DEBUG("[Gateway] Broadcasting notification (level=%s): %.100s",
+        LOG_DEBUG("Broadcasting notification (level=%s): %.100s",
                   level.c_str(), msg.text.c_str());
         
         broadcast("chat.notification", notif_payload);

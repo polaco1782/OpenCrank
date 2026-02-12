@@ -45,7 +45,7 @@ void notify_outgoing_message(
         }
     }
     
-    LOG_DEBUG("[MessageHandler] ◀ OUT Notified %zu plugins of outgoing response to %s",
+    LOG_DEBUG("◀ OUT Notified %zu plugins of outgoing response to %s",
               app.registry().plugins().size(), to.c_str());
 }
 
@@ -100,7 +100,7 @@ void broadcast_notification(
         }
     }
     
-    LOG_INFO("[MessageHandler] Broadcast notification (level=%s): %s", 
+    LOG_INFO(" Broadcast notification (level=%s): %s", 
              level.c_str(), message.c_str());
 }
 
@@ -147,7 +147,7 @@ void on_message(const Message& msg) {
     // Process in thread pool (non-blocking)
     // Copy msg for the lambda capture
     Message msg_copy = msg;
-    app.thread_pool().enqueue([msg_copy]() {
+    app.thread_pool()->enqueue([msg_copy]() {
         process_message(msg_copy);
     });
 }
@@ -316,16 +316,16 @@ std::string handle_ai_message(
     // Start typing indicator
     app.typing().start_typing(msg.to);
     
-    LOG_DEBUG("[AI] === ▶ IN  User message entering agentic loop ===");
-    LOG_DEBUG("[AI] ▶ IN  User: %s", msg.from_name.c_str());
-    LOG_DEBUG("[AI] ▶ IN  Channel: %s, To: %s", msg.channel.c_str(), msg.to.c_str());
-    LOG_DEBUG("[AI] ▶ IN  Message (%zu chars): %.200s%s", 
+    LOG_DEBUG("=== ▶ IN  User message entering agentic loop ===");
+    LOG_DEBUG("▶ IN  User: %s", msg.from_name.c_str());
+    LOG_DEBUG("▶ IN  Channel: %s, To: %s", msg.channel.c_str(), msg.to.c_str());
+    LOG_DEBUG("▶ IN  Message (%zu chars): %.200s%s", 
               msg.text.size(), msg.text.c_str(),
               msg.text.size() > 200 ? "..." : "");
-    LOG_DEBUG("[AI] Session history size: %zu messages", session.history().size());
-    LOG_DEBUG("[AI] System prompt length: %zu chars (~%zu tokens)", 
+    LOG_DEBUG("Session history size: %zu messages", session.history().size());
+    LOG_DEBUG("System prompt length: %zu chars (~%zu tokens)", 
               app.system_prompt().size(), app.system_prompt().size() / 4);
-    LOG_DEBUG("[AI] Registered tools: %zu", app.agent().tools().size());
+    LOG_DEBUG("Registered tools: %zu", app.agent().tools().size());
     
     // Run agentic loop with heartbeat callbacks
     // Use agent config from application (loaded from config file)
@@ -339,13 +339,13 @@ std::string handle_ai_message(
         agent_config
     );
     
-    LOG_DEBUG("[AI] === ◀ OUT Agent loop complete ===");
-    LOG_DEBUG("[AI] ◀ OUT Success: %s, Paused: %s", 
+    LOG_DEBUG("=== ◀ OUT Agent loop complete ===");
+    LOG_DEBUG("◀ OUT Success: %s, Paused: %s", 
               agent_result.success ? "yes" : "no",
               agent_result.paused ? "yes" : "no");
-    LOG_DEBUG("[AI] ◀ OUT Iterations: %d, Tool calls: %d", 
+    LOG_DEBUG("◀ OUT Iterations: %d, Tool calls: %d", 
               agent_result.iterations, agent_result.tool_calls_made);
-    LOG_DEBUG("[AI] ◀ OUT Response (%zu chars): %.200s%s", 
+    LOG_DEBUG("◀ OUT Response (%zu chars): %.200s%s", 
               agent_result.final_response.size(),
               agent_result.final_response.c_str(),
               agent_result.final_response.size() > 200 ? "..." : "");
@@ -359,7 +359,7 @@ std::string handle_ai_message(
         session.set_data("agent_tool_calls", std::to_string(agent_result.tool_calls_made));
         
         response = agent_result.pause_message;
-        LOG_INFO("[AI] Agent paused after %d iterations (%d tool calls), awaiting /continue", 
+        LOG_INFO(" Agent paused after %d iterations (%d tool calls), awaiting /continue", 
                  agent_result.iterations, agent_result.tool_calls_made);
     } else if (agent_result.success) {
         // Clear any paused state
@@ -376,7 +376,7 @@ std::string handle_ai_message(
                 if (i > 0) tools_str << ", ";
                 tools_str << agent_result.tools_used[i];
             }
-            LOG_INFO("[AI] Tools used: %s", tools_str.str().c_str());
+            LOG_INFO(" Tools used: %s", tools_str.str().c_str());
         }
     } else {
         // Clear paused state on error
@@ -435,7 +435,7 @@ void send_response(
             }
 
             if (result.success) {
-                LOG_DEBUG("[MessageHandler] ◀ OUT Sent to %s (msg_id=%s, chunk %zu/%zu)", 
+                LOG_DEBUG("◀ OUT Sent to %s (msg_id=%s, chunk %zu/%zu)", 
                           channel_id.c_str(), result.message_id.c_str(),
                           i + 1, chunks.size());
                 notify_outgoing_message(channel_id, original_msg.to, chunk, original_msg.id);
@@ -443,7 +443,7 @@ void send_response(
                 LOG_ERROR("Failed to send response to %s: %s", channel_id.c_str(), result.error.c_str());
                 
                 // Check thread pool status
-                auto pending = app.thread_pool().pending();
+                auto pending = app.thread_pool()->pending();
                 if (pending > 4) {
                     LOG_WARN("Thread pool has %zu pending tasks - system may be overloaded", pending);
                 }
@@ -462,7 +462,7 @@ void send_response(
 void process_message(const Message& msg) {
     auto& app = Application::instance();
     
-    LOG_DEBUG("[AI] ▶ IN  Processing message from %s: %.100s%s", 
+    LOG_DEBUG("▶ IN  Processing message from %s: %.100s%s", 
               msg.from_name.c_str(), msg.text.c_str(),
               msg.text.size() > 100 ? "..." : "");
     

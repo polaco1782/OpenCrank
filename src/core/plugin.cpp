@@ -19,19 +19,19 @@ PluginRegistry& PluginRegistry::instance() {
 void PluginRegistry::register_command(const CommandDef& cmd) {
     if (cmd.command.empty() || !cmd.handler) {
         LOG_WARN("Attempted to register invalid command (empty=%d, handler=%p)", 
-                 cmd.command.empty(), (void*)cmd.handler);
+                 cmd.command.empty(), reinterpret_cast<void*>(cmd.handler));
         return;
     }
     commands_[cmd.command] = cmd;
-    LOG_DEBUG("  -> Registered: %s", cmd.command.c_str());
+    LOG_DEBUG(" -> Registered: %s", cmd.command.c_str());
 }
 
 void PluginRegistry::register_commands(const std::vector<CommandDef>& cmds) {
-    LOG_DEBUG("[Registry] registering %zu commands", cmds.size());
+    LOG_DEBUG("registering %zu commands", cmds.size());
     for (size_t i = 0; i < cmds.size(); ++i) {
         register_command(cmds[i]);
     }
-    LOG_DEBUG("[Registry] total commands now: %zu", commands_.size());
+    LOG_DEBUG("total commands now: %zu", commands_.size());
 }
 
 std::string PluginRegistry::execute_command(const std::string& command, const Message& msg, 
@@ -107,18 +107,18 @@ ToolResult PluginRegistry::execute_tool(const std::string& tool_id,
 }
 
 AIPlugin* PluginRegistry::get_default_ai() {
-    LOG_DEBUG("[Registry] Selecting default AI provider from %zu registered providers", ai_providers_.size());
+    LOG_DEBUG("Selecting default AI provider from %zu registered providers", ai_providers_.size());
     for (size_t i = 0; i < ai_providers_.size(); ++i) {
-        LOG_DEBUG("[Registry]   Checking: %s (initialized=%d, configured=%d)", 
+        LOG_DEBUG("  Checking: %s (initialized=%d, configured=%d)", 
                   ai_providers_[i]->provider_id().c_str(),
                   ai_providers_[i]->is_initialized(),
                   ai_providers_[i]->is_configured());
         if (ai_providers_[i]->is_initialized() && ai_providers_[i]->is_configured()) {
-            LOG_INFO("[Registry] Selected AI provider: %s", ai_providers_[i]->provider_id().c_str());
+            LOG_INFO(" Selected AI provider: %s", ai_providers_[i]->provider_id().c_str());
             return ai_providers_[i];
         }
     }
-    LOG_WARN("[Registry] No configured AI provider found");
+    LOG_WARN(" No configured AI provider found");
     return NULL;
 }
 

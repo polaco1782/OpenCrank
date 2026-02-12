@@ -8,12 +8,6 @@
 
 namespace opencrank {
 
-// ============ SessionKey static members ============
-
-const char* SessionKey::DEFAULT_AGENT_ID = "default";
-const char* SessionKey::DEFAULT_ACCOUNT_ID = "_default";
-const char* SessionKey::DEFAULT_MAIN_KEY = "main";
-
 std::string SessionKey::build(const std::string& agent_id,
                               const std::string& channel,
                               const std::string& account_id,

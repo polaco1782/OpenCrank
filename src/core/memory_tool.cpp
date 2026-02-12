@@ -70,6 +70,7 @@ std::vector<std::string> MemoryTool::actions() const {
     acts.push_back("memory_save");
     acts.push_back("memory_search");
     acts.push_back("memory_get");
+    acts.push_back("memory_list");
     acts.push_back("file_save");
     acts.push_back("file_read");
     acts.push_back("task_create");
@@ -86,6 +87,7 @@ ToolResult MemoryTool::execute(const std::string& action, const Json& params) {
     if (action == "memory_save")   return do_memory_save(params);
     if (action == "memory_search") return do_memory_search(params);
     if (action == "memory_get")    return do_memory_get(params);
+    if (action == "memory_list")   return do_memory_get(params);
     if (action == "file_save")     return do_file_save(params);
     if (action == "file_read")     return do_file_read(params);
     if (action == "task_create")   return do_task_create(params);
@@ -199,6 +201,32 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
             ToolResult r = self->do_memory_get(params);
             return r.success 
                 ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "No results")
+                : AgentToolResult::fail(r.error);
+        };
+        tools.push_back(tool);
+    }
+    
+    // memory_list
+    {
+        AgentTool tool;
+        tool.name = "memory_list";
+        tool.description = 
+            "List recent memories from the database. "
+            "Shows the most recent saved information, optionally filtered by category.";
+        tool.params.push_back(ToolParamSchema(
+            "limit", "number",
+            "Number of recent entries to return (default: 5)",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "category", "string",
+            "Filter by category (optional)",
+            false
+        ));
+        tool.execute = [self](const Json& params) -> AgentToolResult {
+            ToolResult r = self->do_memory_get(params);
+            return r.success 
+                ? AgentToolResult::ok(r.data.contains("output") ? r.data["output"].get<std::string>() : "No memories")
                 : AgentToolResult::fail(r.error);
         };
         tools.push_back(tool);

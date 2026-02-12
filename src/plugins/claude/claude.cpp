@@ -101,14 +101,6 @@ CompletionResult ClaudeAI::chat(
         request["temperature"] = opts.temperature;
     }
     
-    if (!opts.system_prompt.empty()) {
-        request["system"] = opts.system_prompt;
-        LOG_DEBUG("[Claude] System prompt (%zu chars): %.200s%s", 
-                  opts.system_prompt.size(), 
-                  opts.system_prompt.c_str(),
-                  opts.system_prompt.size() > 200 ? "..." : "");
-    }
-    
     Json msgs = Json::array();
     LOG_DEBUG("[Claude] === ▶ IN  Messages being sent to AI ===");
     LOG_DEBUG("[Claude] ▶ IN  Model: %s, Max tokens: %d", model.c_str(), max_tokens);

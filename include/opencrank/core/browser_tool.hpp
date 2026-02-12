@@ -9,6 +9,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <mutex>
 
 namespace opencrank {
 
@@ -38,6 +39,7 @@ private:
     HttpClient http_;
     size_t max_content_length_;
     int timeout_secs_;
+    std::mutex http_mutex_;
 
     ToolResult do_fetch(const Json& params);
     ToolResult do_request(const Json& params);

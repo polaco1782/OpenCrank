@@ -89,12 +89,12 @@ std::string ContentChunker::store(const std::string& content, const std::string&
 }
 
 std::string ContentChunker::get_chunk(const std::string& id, size_t chunk_index, bool clean_html) const {
-    std::map<std::string, ChunkedContent>::const_iterator it = storage_.find(id);
+    auto it = storage_.find(id);
     if (it == storage_.end()) {
         return "Error: Content ID '" + id + "' not found.";
     }
     
-    const ChunkedContent& cc = it->second;
+    const auto& [content_id, cc] = *it;
     if (chunk_index >= cc.total_chunks) {
         return "Error: Chunk index " + std::to_string(chunk_index) + 
                " out of range. Total chunks: " + std::to_string(cc.total_chunks);
@@ -130,12 +130,12 @@ std::string ContentChunker::get_chunk(const std::string& id, size_t chunk_index,
 }
 
 std::string ContentChunker::get_info(const std::string& id) const {
-    std::map<std::string, ChunkedContent>::const_iterator it = storage_.find(id);
+    auto it = storage_.find(id);
     if (it == storage_.end()) {
         return "Content ID '" + id + "' not found.";
     }
     
-    const ChunkedContent& cc = it->second;
+    const auto& [content_id, cc] = *it;
     std::ostringstream oss;
     oss << "Content ID: " << cc.id << "\n";
     oss << "Source: " << cc.source << "\n";
@@ -146,12 +146,12 @@ std::string ContentChunker::get_info(const std::string& id) const {
 }
 
 std::string ContentChunker::search_with_chunks(const std::string& id, const std::string& query, size_t context_chars, bool use_regex) const {
-    std::map<std::string, ChunkedContent>::const_iterator it = storage_.find(id);
+    auto it = storage_.find(id);
     if (it == storage_.end()) {
         return "Content ID '" + id + "' not found.";
     }
     
-    const ChunkedContent& cc = it->second;
+    const auto& [content_id, cc] = *it;
     
     // Use shared search helper
     std::vector<Match> matches = find_matches(cc.full_content, query, cc.chunk_size, use_regex);
@@ -200,11 +200,10 @@ std::string ContentChunker::search_with_chunks(const std::string& id, const std:
             
             // Find the match length from our matches vector
             size_t match_len = query.size(); // default
-            for (size_t j = 0; j < matches.size(); ++j) {
-                if (matches[j].position == match_pos) {
-                    match_len = matches[j].length;
-                    break;
-                }
+            auto match_it = std::find_if(matches.begin(), matches.end(),
+                [match_pos](const Match& m) { return m.position == match_pos; });
+            if (match_it != matches.end()) {
+                match_len = match_it->length;
             }
             
             size_t start = (match_pos > context_chars) ? (match_pos - context_chars) : 0;
@@ -280,11 +279,10 @@ std::string ContentChunker::search_all_chunks(const std::string& query, size_t c
                     
                     // Find the match length
                     size_t match_len = query.size();
-                    for (size_t j = 0; j < matches.size(); ++j) {
-                        if (matches[j].position == match_pos) {
-                            match_len = matches[j].length;
-                            break;
-                        }
+                    auto match_it = std::find_if(matches.begin(), matches.end(),
+                        [match_pos](const Match& m) { return m.position == match_pos; });
+                    if (match_it != matches.end()) {
+                        match_len = match_it->length;
                     }
                     
                     size_t start = (match_pos > context_chars) ? (match_pos - context_chars) : 0;
@@ -331,11 +329,12 @@ void ContentChunker::remove(const std::string& id) {
 }
 
 size_t ContentChunker::get_total_chunks(const std::string& id) const {
-    std::map<std::string, ChunkedContent>::const_iterator it = storage_.find(id);
+    auto it = storage_.find(id);
     if (it == storage_.end()) {
         return 0;
     }
-    return it->second.total_chunks;
+    const auto& [content_id, cc] = *it;
+    return cc.total_chunks;
 }
 
 } // namespace opencrank

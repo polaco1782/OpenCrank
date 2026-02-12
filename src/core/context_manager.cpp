@@ -223,9 +223,15 @@ std::string ContextManager::load_resume_from_memory(
 
 std::vector<ConversationMessage> ContextManager::build_resumed_history(
     const std::string& resume,
-    const std::string& last_user_message) const
+    const std::string& last_user_message,
+    const std::string& system_prompt) const
 {
     std::vector<ConversationMessage> fresh_history;
+    
+    // Add the system prompt as the first message
+    if (!system_prompt.empty()) {
+        fresh_history.push_back(ConversationMessage::system(system_prompt));
+    }
     
     // Inject the resume as a system-like context message
     std::ostringstream resume_context;
@@ -298,7 +304,7 @@ bool ContextManager::perform_resume_cycle(
     LOG_INFO("[ContextManager] Step 3: Wiping context (%zu messages) and injecting resume...",
              history.size());
     
-    history = build_resumed_history(resume, last_user_message);
+    history = build_resumed_history(resume, last_user_message, system_prompt);
     
     ContextUsage new_usage = estimate_usage(history, system_prompt);
     LOG_INFO("[ContextManager] Context resumed: %.1f%% usage (%zu/%zu chars, %zu messages)",

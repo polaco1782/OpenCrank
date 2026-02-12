@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <mutex>
 
 namespace opencrank {
 
@@ -247,6 +248,9 @@ std::vector<AgentTool> BrowserTool::get_agent_tools() const {
 bool BrowserTool::init(const Config& cfg) {
     max_content_length_ = cfg.get_int("browser.max_content_length", 100000);
     timeout_secs_ = cfg.get_int("browser.timeout", 30);
+
+    // Set timeout on HttpClient
+    http_.set_timeout(timeout_secs_ * 1000);
 
     LOG_INFO("Browser tool initialized (max_content=%zu, timeout=%ds)",
              max_content_length_, timeout_secs_);
@@ -547,19 +551,14 @@ ToolResult BrowserTool::perform_browser_request(const std::string& method,
                                                  const std::string& proxy,
                                                  size_t max_len,
                                                  bool do_extract_text) {
+    std::lock_guard<std::mutex> lock(http_mutex_);
     ToolResult result;
 
     // Set up headers
     std::map<std::string, std::string> headers = extra_headers;
-    if (headers.find("User-Agent") == headers.end()) {
-        headers["User-Agent"] = "OpenCrank C++/1.0";
-    }
-    if (headers.find("Accept") == headers.end()) {
-        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-    }
-    if (headers.find("Accept-Language") == headers.end()) {
-        headers["Accept-Language"] = "en-US,en;q=0.5";
-    }
+    headers.try_emplace("User-Agent", "OpenCrank C++/1.0");
+    headers.try_emplace("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+    headers.try_emplace("Accept-Language", "en-US,en;q=0.5");
     if (!content_type.empty()) {
         headers["Content-Type"] = content_type;
     }

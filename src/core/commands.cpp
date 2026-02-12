@@ -56,9 +56,8 @@ std::string cmd_help(const Message& /*msg*/, Session& /*session*/, const std::st
     oss << "OpenCrank C++11 Bot 🦞\n\n"
         << "Commands:\n";
 
-    for (std::map<std::string, CommandDef>::const_iterator it = commands.begin();
-         it != commands.end(); ++it) {
-        oss << it->first << " - " << it->second.description << "\n";
+    for (const auto& [command, def] : commands) {
+        oss << command << " - " << def.description << "\n";
     }
 
     oss << "/skills - List available skills\n"
@@ -89,10 +88,9 @@ std::string cmd_info(const Message& msg, Session& /*session*/, const std::string
     std::ostringstream tools_list;
     const std::map<std::string, AgentTool>& tools = app.agent().tools();
     size_t count = 0;
-    for (std::map<std::string, AgentTool>::const_iterator it = tools.begin();
-         it != tools.end(); ++it) {
+    for (const auto& [tool_name, tool] : tools) {
         if (count > 0) tools_list << ", ";
-        tools_list << it->first;
+        tools_list << tool_name;
         ++count;
     }
 

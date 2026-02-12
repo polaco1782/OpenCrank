@@ -262,12 +262,8 @@ bool PollManager::has_voted(const std::string& poll_id, const std::string& voter
     if (it == votes_.end()) return false;
     
     const std::vector<PollVote>& poll_votes = it->second;
-    for (size_t i = 0; i < poll_votes.size(); ++i) {
-        if (poll_votes[i].voter_id == voter_id) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(poll_votes.begin(), poll_votes.end(),
+        [&voter_id](const PollVote& vote) { return vote.voter_id == voter_id; });
 }
 
 std::vector<int> PollManager::get_voter_selection(const std::string& poll_id, const std::string& voter_id) const {
@@ -275,10 +271,10 @@ std::vector<int> PollManager::get_voter_selection(const std::string& poll_id, co
     if (it == votes_.end()) return std::vector<int>();
     
     const std::vector<PollVote>& poll_votes = it->second;
-    for (size_t i = 0; i < poll_votes.size(); ++i) {
-        if (poll_votes[i].voter_id == voter_id) {
-            return poll_votes[i].selected_options;
-        }
+    auto it_vote = std::find_if(poll_votes.begin(), poll_votes.end(),
+        [&voter_id](const PollVote& vote) { return vote.voter_id == voter_id; });
+    if (it_vote != poll_votes.end()) {
+        return it_vote->selected_options;
     }
     return std::vector<int>();
 }

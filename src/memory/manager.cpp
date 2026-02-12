@@ -35,15 +35,15 @@ bool MemoryManager::init(const MemoryConfig& config) {
         db_path = ".opencrank/memory.db";
     }
     
-    LOG_INFO("[MemoryManager] Initializing with db_path=%s", db_path.c_str());
+    LOG_INFO(" Initializing with db_path=%s", db_path.c_str());
     
     if (!store_.open(db_path)) {
-        LOG_ERROR("[MemoryManager] Failed to open database: %s", db_path.c_str());
+        LOG_ERROR(" Failed to open database: %s", db_path.c_str());
         return false;
     }
     
     initialized_ = true;
-    LOG_INFO("[MemoryManager] Initialized successfully");
+    LOG_INFO(" Initialized successfully");
     return true;
 }
 
@@ -71,7 +71,7 @@ void MemoryManager::shutdown() {
     if (initialized_) {
         store_.close();
         initialized_ = false;
-        LOG_INFO("[MemoryManager] Shut down");
+        LOG_INFO(" Shut down");
     }
 }
 
@@ -88,7 +88,7 @@ std::string MemoryManager::save_memory(
     const std::string& user_id)
 {
     if (!initialized_) {
-        LOG_ERROR("[MemoryManager] Not initialized, cannot save memory");
+        LOG_ERROR(" Not initialized, cannot save memory");
         return "";
     }
     
@@ -103,7 +103,7 @@ std::string MemoryManager::save_memory(
     
     if (store_.save_memory(entry)) {
         // Return a confirmation - the store generates the ID internally
-        LOG_DEBUG("[MemoryManager] Memory saved (category=%s, importance=%d)",
+        LOG_DEBUG("Memory saved (category=%s, importance=%d)",
                   category.c_str(), importance);
         return "saved";
     }
@@ -115,7 +115,7 @@ std::vector<MemorySearchHit> MemoryManager::search(
     const std::string& query, int max_results, const std::string& category)
 {
     if (!initialized_) {
-        LOG_WARN("[MemoryManager] Not initialized, cannot search");
+        LOG_WARN(" Not initialized, cannot search");
         return std::vector<MemorySearchHit>();
     }
     
@@ -150,7 +150,7 @@ std::string MemoryManager::create_task(
     const std::string& user_id)
 {
     if (!initialized_) {
-        LOG_ERROR("[MemoryManager] Not initialized, cannot create task");
+        LOG_ERROR(" Not initialized, cannot create task");
         return "";
     }
     
@@ -163,7 +163,7 @@ std::string MemoryManager::create_task(
     task.user_id = user_id;
     
     if (store_.create_task(task)) {
-        LOG_DEBUG("[MemoryManager] Task created: '%.50s'", content.c_str());
+        LOG_DEBUG("Task created: '%.50s'", content.c_str());
         return "created";
     }
     

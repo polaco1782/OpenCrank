@@ -122,7 +122,8 @@ public:
     // Build a fresh history with resume context injected
     std::vector<ConversationMessage> build_resumed_history(
         const std::string& resume,
-        const std::string& last_user_message) const;
+        const std::string& last_user_message,
+        const std::string& system_prompt) const;
 
 private:
     ContextManagerConfig config_;

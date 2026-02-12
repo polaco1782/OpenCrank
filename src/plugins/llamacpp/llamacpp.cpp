@@ -123,16 +123,6 @@ CompletionResult LlamaCppAI::chat(
     request["model"] = model;
     LOG_DEBUG("[LlamaCpp] Using model: %s", model.c_str());
     
-    // Add system prompt if provided
-    if (!opts.system_prompt.empty()) {
-        LOG_DEBUG("[LlamaCpp] === System Prompt ===");
-        LOG_DEBUG("[LlamaCpp] System prompt (%zu chars): %.500s%s", 
-                  opts.system_prompt.size(), 
-                  opts.system_prompt.c_str(),
-                  opts.system_prompt.size() > 500 ? "..." : "");
-        LOG_DEBUG("[LlamaCpp] === End System Prompt ===");
-    }
-    
     // Convert messages to OpenAI format
     Json msgs = Json::array();
     
@@ -418,9 +408,9 @@ std::vector<ConversationMessage> LlamaCppAI::manage_context(
     
     // Check if we need a resume cycle
     if (context_manager_.needs_resume(messages, system_prompt)) {
-        ContextUsage usage = context_manager_.estimate_usage(messages, system_prompt);
+        ContextUsage resume_usage = context_manager_.estimate_usage(messages, system_prompt);
         LOG_WARN("[LlamaCpp] Context at %.0f%% capacity (%zu/%zu chars), initiating resume cycle",
-                 usage.usage_ratio * 100.0, usage.total_chars, usage.budget_chars);
+                 resume_usage.usage_ratio * 100.0, resume_usage.total_chars, resume_usage.budget_chars);
         
         // Perform the resume cycle: generate summary, save memory, wipe, reload
         std::vector<ConversationMessage> history_copy = messages;

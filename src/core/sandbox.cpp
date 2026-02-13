@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Security Sandbox Implementation (Landlock)
+ * OpenCrank C++ - Security Sandbox Implementation (Landlock)
  *
  * Uses Linux Landlock LSM to restrict filesystem access for the entire
  * process tree. After activation, neither the main process nor any child

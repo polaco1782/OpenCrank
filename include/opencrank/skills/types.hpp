@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Skills Types
+ * opencrank C++ - Skills Types
  * 
  * Data structures for the skills system.
  * Based on opencrank's skill/prompt architecture.

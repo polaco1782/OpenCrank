@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Dynamic Plugin Loader Implementation
+ * OpenCrank C++ - Dynamic Plugin Loader Implementation
  */
 #include <opencrank/core/loader.hpp>
 #include <opencrank/core/logger.hpp>

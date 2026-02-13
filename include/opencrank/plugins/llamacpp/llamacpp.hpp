@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Llama.cpp AI Plugin
+ * opencrank C++ - Llama.cpp AI Plugin
  * 
  * Implementation of the llama.cpp server API.
  * Uses the OpenAI-compatible API (http://localhost:8080/v1/chat/completions).

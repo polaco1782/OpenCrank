@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Application Class
+ * opencrank C++ - Application Class
  * 
  * Central application singleton managing configuration, plugins, 
  * sessions, and the main event loop.
@@ -31,7 +31,7 @@ namespace opencrank {
 
 struct AppInfo {
     static constexpr const char* VERSION = "0.5.0";
-    static constexpr const char* NAME = "opencrank C++11";
+    static constexpr const char* NAME = "opencrank C++";
     
     // Default system prompt for the AI assistant
     static const char* default_system_prompt();
@@ -76,7 +76,6 @@ public:
     
     // System prompt (can be customized via config)
     const std::string& system_prompt() const { return system_prompt_; }
-    void set_system_prompt(const std::string& prompt) { system_prompt_ = prompt; }
     
     // ==================== Lifecycle ====================
     
@@ -102,6 +101,7 @@ private:
     void setup_sandbox();      // Phase 1: create dirs, override paths
     void activate_sandbox();   // Phase 2: activate Landlock (after plugins loaded)
     void setup_logging();
+    void setup_system_prompt();
     void setup_skills();
     void setup_agent();
     void setup_plugins();

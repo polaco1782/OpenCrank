@@ -1,5 +1,6 @@
 #include <opencrank/core/http_client.hpp>
 #include <opencrank/core/logger.hpp>
+#include <opencrank/core/utils.hpp>
 #include <cstring>
 #include <sstream>
 
@@ -167,10 +168,16 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     // Set timeout
     curl_easy_setopt(curl_, CURLOPT_TIMEOUT_MS, timeout_ms_);
     curl_easy_setopt(curl_, CURLOPT_CONNECTTIMEOUT_MS, timeout_ms_ / 2);
+    // Avoid signals which can break timeouts when used in multithreaded programs
+    curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
     
     // Set method
     if (method == "POST") {
         curl_easy_setopt(curl_, CURLOPT_POST, 1L);
+        // Ensure a POST with an empty body still sends Content-Length: 0
+        if (body.empty()) {
+            curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, 0L);
+        }
     } else if (method == "PUT") {
         curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "PUT");
     } else if (method == "DELETE") {
@@ -233,7 +240,8 @@ HttpResponse HttpClient::perform_request(const std::string& method,
     // Get status code
     curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &resp.status_code);
     
-    resp.body = response_body;
+    // Sanitize response body to ensure valid UTF-8 for JSON serialization
+    resp.body = sanitize_utf8(response_body);
     resp.headers = response_headers;
     
     LOG_DEBUG("◀ IN  %s %s -> HTTP %ld (%zu bytes)", 

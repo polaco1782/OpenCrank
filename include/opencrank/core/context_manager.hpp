@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Context Manager
+ * opencrank C++ - Context Manager
  * 
  * Manages AI context window intelligently:
  * - Monitors context usage and detects when approaching limits (75%)

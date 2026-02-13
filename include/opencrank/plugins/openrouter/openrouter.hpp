@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - OpenRouter AI Plugin
+ * opencrank C++ - OpenRouter AI Plugin
  * 
  * Implementation of the OpenRouter API.
  * Uses the OpenAI-compatible API (https://openrouter.ai/api/v1/chat/completions).

@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Message Handler Implementation
+ * OpenCrank C++ - Message Handler Implementation
  * 
  * Routes incoming messages to commands, skills, or AI.
  */
@@ -205,7 +205,7 @@ bool handle_skill_command(
     // Check if this is a skill command
     auto skill_cmd = app.skills().resolve_skill_command_invocation(cmd_text, app.skill_commands());
     
-    LOG_DEBUG("[Skills] Skill command resolution result: %s", 
+    LOG_DEBUG("Skill command resolution result: %s", 
               skill_cmd.first ? "MATCHED" : "NO MATCH");
     
     if (!skill_cmd.first) {
@@ -216,7 +216,7 @@ bool handle_skill_command(
     const auto* spec = skill_cmd.first;
     const auto& skill_args = skill_cmd.second;
     
-    LOG_INFO("[Skills] ▶ IN  Skill command invoked: %s (args: %s)", spec->skill_name.c_str(), skill_args.c_str());
+    LOG_INFO(" ▶ IN  Skill command invoked: %s (args: %s)", spec->skill_name.c_str(), skill_args.c_str());
     
     if (!spec->dispatch.empty() && spec->dispatch.kind == "tool") {
         // Direct tool dispatch - not implemented yet
@@ -226,11 +226,11 @@ bool handle_skill_command(
     }
     
     // AI-mediated dispatch via agentic loop
-    LOG_DEBUG("[Skills] AI-mediated skill dispatch via agentic loop: %s", spec->skill_name.c_str());
+    LOG_DEBUG("AI-mediated skill dispatch via agentic loop: %s", spec->skill_name.c_str());
     
     // Find the skill entry
     const auto* entry = app.skills().find_skill_by_name(spec->skill_name, app.skill_entries());
-    LOG_DEBUG("[Skills] Skill entry lookup: %s", entry ? "FOUND" : "NOT FOUND");
+    LOG_DEBUG("Skill entry lookup: %s", entry ? "FOUND" : "NOT FOUND");
     
     if (!entry) {
         response_out = "⚠️ Skill '" + spec->skill_name + "' not found in loaded entries";
@@ -245,12 +245,12 @@ bool handle_skill_command(
     rewritten += "Then follow those instructions to complete this task: ";
     rewritten += skill_args;
     
-    LOG_DEBUG("[Skills] Rewritten prompt: %s", rewritten.c_str());
-    LOG_DEBUG("[Skills] System prompt size: %zu chars", app.system_prompt().size());
+    LOG_DEBUG("Rewritten prompt: %s", rewritten.c_str());
+    LOG_DEBUG("System prompt size: %zu chars", app.system_prompt().size());
     
     // Route to AI
     auto* ai = app.registry().get_default_ai();
-    LOG_DEBUG("[Skills] AI provider: %s", 
+    LOG_DEBUG("AI provider: %s", 
               ai ? (ai->is_configured() ? "READY" : "NOT CONFIGURED") : "NULL");
     
     if (!ai || !ai->is_configured()) {
@@ -265,7 +265,7 @@ bool handle_skill_command(
     
     app.typing().start_typing(msg.to);
     
-    LOG_INFO("[Skills] Starting agentic loop for skill: %s", spec->skill_name.c_str());
+    LOG_INFO(" Starting agentic loop for skill: %s", spec->skill_name.c_str());
     
     // Use agent config from application (loaded from config file)
     AgentConfig agent_config = app.agent().config();
@@ -278,18 +278,18 @@ bool handle_skill_command(
         agent_config
     );
     
-    LOG_DEBUG("[Skills] Agent loop completed: success=%s, iterations=%d, tool_calls=%d",
+    LOG_DEBUG("Agent loop completed: success=%s, iterations=%d, tool_calls=%d",
               agent_result.success ? "yes" : "no", 
               agent_result.iterations, 
               agent_result.tool_calls_made);
     
     if (agent_result.success) {
         response_out = agent_result.final_response;
-        LOG_INFO("[Skills] ◀ OUT Skill completed via %d tool calls (response: %zu chars)", 
+        LOG_INFO(" ◀ OUT Skill completed via %d tool calls (response: %zu chars)", 
                  agent_result.tool_calls_made, response_out.size());
     } else {
         response_out = "❌ Skill execution failed: " + agent_result.error;
-        LOG_ERROR("[Skills] ◀ OUT Skill execution failed: %s", agent_result.error.c_str());
+        LOG_ERROR(" ◀ OUT Skill execution failed: %s", agent_result.error.c_str());
     }
     
     app.typing().stop_typing(msg.to);

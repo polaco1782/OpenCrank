@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Content Chunker
+ * opencrank C++ - Content Chunker
  * 
  * Handles large content that exceeds token limits by splitting into
  * manageable chunks with search and navigation support.

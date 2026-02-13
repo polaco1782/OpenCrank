@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - AI Process Monitor
+ * opencrank C++ - AI Process Monitor
  * 
  * Monitors AI processing activity with heartbeat tracking and hang detection.
  * Automatically sends typing indicators to channels while AI is working.

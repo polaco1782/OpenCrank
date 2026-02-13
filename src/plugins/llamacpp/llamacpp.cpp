@@ -208,13 +208,23 @@ CompletionResult LlamaCppAI::chat(
         if (resp.is_object()) {
             if (resp.contains("error") && resp["error"].is_object()) {
                 std::string msg = resp["error"].value("message", std::string(""));
+                // Handle code as either string or number
+                std::string code_str;
+                if (resp["error"].contains("code")) {
+                    const Json& code_field = resp["error"]["code"];
+                    if (code_field.is_string()) {
+                        code_str = code_field.get<std::string>();
+                    } else if (code_field.is_number()) {
+                        code_str = std::to_string(code_field.get<int64_t>());
+                    }
+                }
                 if (!msg.empty()) {
-                    error_msg = msg;
+                    error_msg = code_str.empty() ? msg : (code_str + ": " + msg);
                 }
             }
         }
         LOG_ERROR("[LlamaCpp] API error: %s (HTTP %d)", error_msg.c_str(), response.status_code);
-        return CompletionResult::fail(error_msg + " (HTTP " + 
+        return CompletionResult::fail(error_msg + " (HTTP " +
                                      std::to_string(response.status_code) + ")");
     }
     

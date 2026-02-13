@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - AI Plugin Interface
+ * opencrank C++ - AI Plugin Interface
  * 
  * Abstract interface for AI/LLM providers.
  * Supports conversation history, system prompts, and streaming.

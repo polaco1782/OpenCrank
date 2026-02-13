@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Thread Pool Implementation
+ * OpenCrank C++ - Thread Pool Implementation
  */
 #include <opencrank/core/thread_pool.hpp>
 #include <opencrank/core/logger.hpp>

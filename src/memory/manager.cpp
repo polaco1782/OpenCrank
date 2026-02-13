@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Memory Manager Implementation
+ * OpenCrank C++ - Memory Manager Implementation
  * 
  * High-level memory management. Coordinates the SQLite store
  * and provides a clean interface for memory and task operations.

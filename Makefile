@@ -227,7 +227,7 @@ run: all
 
 # Help
 help:
-	@echo "OpenCrank C++11 Build System"
+	@echo "OpenCrank C++ Build System"
 	@echo ""
 	@echo "Targets:"
 	@echo "  all      - Build main binary and all plugins (default)"
@@ -259,7 +259,7 @@ help:
 	@echo "  rate_limiter - Rate limiting utility (built into core)"
 	@echo ""
 	@echo "Requirements:"
-	@echo "  - g++ with C++11 support"
+	@echo "  - g++ with C++ support"
 	@echo "  - libcurl development headers"
 	@echo "  - libsqlite3 development headers"
 	@echo "  - libssl development headers"

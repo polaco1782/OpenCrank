@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Skills Manager
+ * opencrank C++ - Skills Manager
  * 
  * Manages skills loading, filtering, and prompt generation.
  * Builds skill snapshots and prompts for AI consumption.

@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Context Manager Implementation
+ * OpenCrank C++ - Context Manager Implementation
  * 
  * Intelligent context window management with resume-based strategy.
  * Instead of blindly truncating messages, the manager detects when

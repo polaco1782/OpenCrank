@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Claude AI Plugin
+ * opencrank C++ - Claude AI Plugin
  * 
  * Implementation of the Anthropic Claude API.
  * Uses the Messages API (https://api.anthropic.com/v1/messages).

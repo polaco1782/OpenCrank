@@ -17,7 +17,7 @@ The gateway plugin is built using:
 
 - **Crow** is included as a header-only dependency in `deps/crow_all.h`
 - No external library dependencies (just system libraries: pthread, zlib)
-- Requires C++17 (only for this plugin, rest of codebase uses C++11)
+- Requires C++17 (only for this plugin, rest of codebase uses C++)
 
 ### Key Components
 
@@ -197,7 +197,7 @@ This C++ gateway implementation is designed to be compatible with the OpenCrank 
 
 ### Differences
 
-- **Language**: C++11 vs TypeScript/Node.js
+- **Language**: C++ vs TypeScript/Node.js
 - **WebSocket Library**: libwebsockets vs ws npm package
 - **Performance**: Lower memory footprint, faster startup
 - **Deployment**: Single binary vs Node.js runtime required

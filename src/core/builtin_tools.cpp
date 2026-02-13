@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Built-in Tools Provider Implementation
+ * OpenCrank C++ - Built-in Tools Provider Implementation
  * 
  * BuiltinToolsProvider class: filesystem and shell tools for the agent.
  */

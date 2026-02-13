@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Message Handler
+ * opencrank C++ - Message Handler
  * 
  * Handles incoming messages: routing to commands, skills, and AI.
  * Decoupled from the Application class for better modularity.

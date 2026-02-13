@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Memory Manager
+ * opencrank C++ - Memory Manager
  * 
  * High-level memory management coordinating the storage backend.
  * Provides a clean interface for saving, searching, and managing

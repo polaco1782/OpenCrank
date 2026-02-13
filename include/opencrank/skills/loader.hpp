@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Skills Loader
+ * opencrank C++ - Skills Loader
  * 
  * Loads skills from SKILL.md files in directories.
  * Parses frontmatter and builds SkillEntry objects.

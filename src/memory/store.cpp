@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Memory Store Implementation
+ * OpenCrank C++ - Memory Store Implementation
  * 
  * SQLite storage backend for memories and tasks.
  * Uses FTS5 for BM25 full-text search.

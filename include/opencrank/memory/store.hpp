@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Memory Store
+ * opencrank C++ - Memory Store
  * 
  * SQLite storage backend for the memory system.
  * Handles persistent storage of memory entries, tasks, and provides

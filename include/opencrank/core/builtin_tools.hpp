@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Built-in Agent Tools
+ * opencrank C++ - Built-in Agent Tools
  * 
  * Provides filesystem and shell tools for the agent:
  * - read: Read file contents

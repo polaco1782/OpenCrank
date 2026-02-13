@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Skills Loader Implementation
+ * OpenCrank C++ - Skills Loader Implementation
  * 
  * Loads skills from SKILL.md files, parses frontmatter.
  */
@@ -21,35 +21,35 @@ SkillLoader::~SkillLoader() {}
 std::vector<Skill> SkillLoader::load_from_dir(const std::string& dir, const std::string& source) {
     std::vector<Skill> skills;
     
-    LOG_INFO("[SkillLoader] load_from_dir called: dir='%s', source='%s'", dir.c_str(), source.c_str());
-    LOG_DEBUG("[SkillLoader] Loading skills from directory: %s (source: %s)", dir.c_str(), source.c_str());
+    LOG_INFO(" load_from_dir called: dir='%s', source='%s'", dir.c_str(), source.c_str());
+    LOG_DEBUG("Loading skills from directory: %s (source: %s)", dir.c_str(), source.c_str());
     
     if (!dir_exists(dir)) {
-        LOG_INFO("[SkillLoader] Directory does NOT exist: %s", dir.c_str());
-        LOG_DEBUG("[SkillLoader] Directory does not exist: %s", dir.c_str());
+        LOG_INFO(" Directory does NOT exist: %s", dir.c_str());
+        LOG_DEBUG("Directory does not exist: %s", dir.c_str());
         return skills;
     }
-    LOG_INFO("[SkillLoader] Directory exists, proceeding with load");
+    LOG_INFO(" Directory exists, proceeding with load");
     
     // List subdirectories and look for SKILL.md in each
     std::vector<std::string> subdirs = list_subdirs(dir);
-    LOG_DEBUG("[SkillLoader] Found %zu subdirectories in %s", subdirs.size(), dir.c_str());
+    LOG_DEBUG("Found %zu subdirectories in %s", subdirs.size(), dir.c_str());
     
     for (size_t i = 0; i < subdirs.size(); ++i) {
         const std::string& subdir = subdirs[i];
         std::string skill_dir = dir + "/" + subdir;
         
-        LOG_DEBUG("[SkillLoader] Attempting to load skill from: %s", skill_dir.c_str());
+        LOG_DEBUG("Attempting to load skill from: %s", skill_dir.c_str());
         Skill skill = load_skill(skill_dir, source);
         if (!skill.empty()) {
-            LOG_DEBUG("[SkillLoader] Successfully loaded skill: %s", skill.name.c_str());
+            LOG_DEBUG("Successfully loaded skill: %s", skill.name.c_str());
             skills.push_back(skill);
         } else {
-            LOG_DEBUG("[SkillLoader] No valid skill found in: %s", skill_dir.c_str());
+            LOG_DEBUG("No valid skill found in: %s", skill_dir.c_str());
         }
     }
     
-    LOG_INFO("[SkillLoader] Loaded %zu skills from %s", skills.size(), dir.c_str());
+    LOG_INFO(" Loaded %zu skills from %s", skills.size(), dir.c_str());
     return skills;
 }
 
@@ -57,24 +57,24 @@ Skill SkillLoader::load_skill(const std::string& skill_dir, const std::string& s
     Skill skill;
     
     std::string skill_file = skill_dir + "/SKILL.md";
-    LOG_DEBUG("[SkillLoader] Looking for skill file: %s", skill_file.c_str());
+    LOG_DEBUG("Looking for skill file: %s", skill_file.c_str());
     
     if (!file_exists(skill_file)) {
-        LOG_DEBUG("[SkillLoader] SKILL.md not found in: %s", skill_dir.c_str());
+        LOG_DEBUG("SKILL.md not found in: %s", skill_dir.c_str());
         return skill;
     }
     
     std::string content = read_file(skill_file);
     if (content.empty()) {
-        LOG_WARN("[SkillLoader] SKILL.md is empty or unreadable: %s", skill_file.c_str());
+        LOG_WARN(" SKILL.md is empty or unreadable: %s", skill_file.c_str());
         return skill;
     }
     
-    LOG_DEBUG("[SkillLoader] Read %zu bytes from %s", content.size(), skill_file.c_str());
+    LOG_DEBUG("Read %zu bytes from %s", content.size(), skill_file.c_str());
     
     // Parse frontmatter to get name and description
     SkillFrontmatter fm = parse_frontmatter(content);
-    LOG_DEBUG("[SkillLoader] Parsed frontmatter with %zu keys", fm.size());
+    LOG_DEBUG("Parsed frontmatter with %zu keys", fm.size());
     
     // Get skill name from frontmatter or directory name
     std::string dir_name;
@@ -92,7 +92,7 @@ Skill SkillLoader::load_skill(const std::string& skill_dir, const std::string& s
     skill.source = source;
     skill.content = content;
     
-    LOG_DEBUG("[SkillLoader] Loaded skill: name='%s', description='%s', path='%s'",
+    LOG_DEBUG("Loaded skill: name='%s', description='%s', path='%s'",
               skill.name.c_str(), skill.description.c_str(), skill.file_path.c_str());
     
     return skill;
@@ -101,22 +101,22 @@ Skill SkillLoader::load_skill(const std::string& skill_dir, const std::string& s
 SkillFrontmatter SkillLoader::parse_frontmatter(const std::string& content) {
     SkillFrontmatter fm;
     
-    LOG_DEBUG("[SkillLoader] Parsing frontmatter from content (%zu bytes)", content.size());
+    LOG_DEBUG("Parsing frontmatter from content (%zu bytes)", content.size());
     
     // Frontmatter is between --- and ---
     if (content.size() < 3 || content.substr(0, 3) != "---") {
-        LOG_DEBUG("[SkillLoader] No frontmatter delimiter found at start");
+        LOG_DEBUG("No frontmatter delimiter found at start");
         return fm;
     }
     
     size_t end_pos = content.find("\n---", 3);
     if (end_pos == std::string::npos) {
-        LOG_DEBUG("[SkillLoader] No closing frontmatter delimiter found");
+        LOG_DEBUG("No closing frontmatter delimiter found");
         return fm;
     }
     
     std::string frontmatter = content.substr(3, end_pos - 3);
-    LOG_DEBUG("[SkillLoader] Extracted frontmatter (%zu bytes)", frontmatter.size());
+    LOG_DEBUG("Extracted frontmatter (%zu bytes)", frontmatter.size());
     
     // Parse YAML-like frontmatter (simple key: value pairs)
     std::istringstream iss(frontmatter);
@@ -156,32 +156,32 @@ SkillFrontmatter SkillLoader::parse_frontmatter(const std::string& content) {
                 current_key = key;
                 current_value = value;
                 in_multiline = true;
-                LOG_DEBUG("[SkillLoader] Starting multiline value for key: %s", key.c_str());
+                LOG_DEBUG("Starting multiline value for key: %s", key.c_str());
                 continue;
             }
             
             fm[key] = value;
-            LOG_DEBUG("[SkillLoader] Parsed frontmatter key: %s = %s", key.c_str(), value.c_str());
+            LOG_DEBUG("Parsed frontmatter key: %s = %s", key.c_str(), value.c_str());
         }
     }
     
-    LOG_DEBUG("[SkillLoader] Frontmatter parsing complete, %zu keys found", fm.size());
+    LOG_DEBUG("Frontmatter parsing complete, %zu keys found", fm.size());
     return fm;
 }
 
 SkillMetadata SkillLoader::resolve_metadata(const SkillFrontmatter& frontmatter) {
     SkillMetadata metadata;
     
-    LOG_DEBUG("[SkillLoader] Resolving metadata from frontmatter");
+    LOG_DEBUG("Resolving metadata from frontmatter");
     
     if (frontmatter.count("metadata") == 0) {
-        LOG_DEBUG("[SkillLoader] No metadata field found in frontmatter");
+        LOG_DEBUG("No metadata field found in frontmatter");
         return metadata;
     }
     
-    LOG_DEBUG("[SkillLoader] Parsing metadata JSON: %s", frontmatter.at("metadata").c_str());
+    LOG_DEBUG("Parsing metadata JSON: %s", frontmatter.at("metadata").c_str());
     bool success = parse_metadata_json(frontmatter.at("metadata"), metadata);
-    LOG_DEBUG("[SkillLoader] Metadata parsing %s (always=%s, emoji=%s, skillKey=%s)",
+    LOG_DEBUG("Metadata parsing %s (always=%s, emoji=%s, skillKey=%s)",
               success ? "succeeded" : "failed",
               metadata.always ? "true" : "false",
               metadata.emoji.c_str(),
@@ -193,26 +193,26 @@ SkillMetadata SkillLoader::resolve_metadata(const SkillFrontmatter& frontmatter)
 SkillInvocationPolicy SkillLoader::resolve_invocation_policy(const SkillFrontmatter& frontmatter) {
     SkillInvocationPolicy policy;
     
-    LOG_DEBUG("[SkillLoader] Resolving invocation policy");
+    LOG_DEBUG("Resolving invocation policy");
     
     if (frontmatter.count("user-invocable")) {
         policy.user_invocable = parse_bool(frontmatter.at("user-invocable"), true);
-        LOG_DEBUG("[SkillLoader] Set user-invocable: %s", policy.user_invocable ? "true" : "false");
+        LOG_DEBUG("Set user-invocable: %s", policy.user_invocable ? "true" : "false");
     }
     if (frontmatter.count("user_invocable")) {
         policy.user_invocable = parse_bool(frontmatter.at("user_invocable"), true);
-        LOG_DEBUG("[SkillLoader] Set user_invocable: %s", policy.user_invocable ? "true" : "false");
+        LOG_DEBUG("Set user_invocable: %s", policy.user_invocable ? "true" : "false");
     }
     if (frontmatter.count("disable-model-invocation")) {
         policy.disable_model_invocation = parse_bool(frontmatter.at("disable-model-invocation"), false);
-        LOG_DEBUG("[SkillLoader] Set disable-model-invocation: %s", policy.disable_model_invocation ? "true" : "false");
+        LOG_DEBUG("Set disable-model-invocation: %s", policy.disable_model_invocation ? "true" : "false");
     }
     if (frontmatter.count("disable_model_invocation")) {
         policy.disable_model_invocation = parse_bool(frontmatter.at("disable_model_invocation"), false);
-        LOG_DEBUG("[SkillLoader] Set disable_model_invocation: %s", policy.disable_model_invocation ? "true" : "false");
+        LOG_DEBUG("Set disable_model_invocation: %s", policy.disable_model_invocation ? "true" : "false");
     }
     
-    LOG_DEBUG("[SkillLoader] Invocation policy: user_invocable=%s, disable_model_invocation=%s",
+    LOG_DEBUG("Invocation policy: user_invocable=%s, disable_model_invocation=%s",
               policy.user_invocable ? "true" : "false",
               policy.disable_model_invocation ? "true" : "false");
     
@@ -223,16 +223,16 @@ SkillEntry SkillLoader::build_entry(const Skill& skill) {
     SkillEntry entry;
     entry.skill = skill;
     
-    LOG_DEBUG("[SkillLoader] Building entry for skill: %s", skill.name.c_str());
+    LOG_DEBUG("Building entry for skill: %s", skill.name.c_str());
     
     if (!skill.content.empty()) {
-        LOG_DEBUG("[SkillLoader] Processing skill content for: %s", skill.name.c_str());
+        LOG_DEBUG("Processing skill content for: %s", skill.name.c_str());
         entry.frontmatter = parse_frontmatter(skill.content);
         entry.metadata = resolve_metadata(entry.frontmatter);
         entry.invocation = resolve_invocation_policy(entry.frontmatter);
-        LOG_DEBUG("[SkillLoader] Built complete entry for skill: %s", skill.name.c_str());
+        LOG_DEBUG("Built complete entry for skill: %s", skill.name.c_str());
     } else {
-        LOG_WARN("[SkillLoader] Skill content is empty for: %s", skill.name.c_str());
+        LOG_WARN(" Skill content is empty for: %s", skill.name.c_str());
     }
     
     return entry;
@@ -262,7 +262,7 @@ std::string SkillLoader::format_skill_for_prompt(const Skill& skill) {
     // Format: <available_skill name="name" location="path/to/SKILL.md">
     //   <description>...</description>
     // </available_skill>
-    LOG_DEBUG("[SkillLoader] Formatting skill for AI prompt: %s", skill.name.c_str());
+    LOG_DEBUG("Formatting skill for AI prompt: %s", skill.name.c_str());
     
     std::ostringstream oss;
     oss << "<available_skill name=\"" << skill.name << "\" location=\"" << skill.file_path << "\">\n";
@@ -270,7 +270,7 @@ std::string SkillLoader::format_skill_for_prompt(const Skill& skill) {
     oss << "</available_skill>";
     
     std::string result = oss.str();
-    LOG_DEBUG("[SkillLoader] Formatted skill XML (%zu bytes) for: %s", result.size(), skill.name.c_str());
+    LOG_DEBUG("Formatted skill XML (%zu bytes) for: %s", result.size(), skill.name.c_str());
     return result;
 }
 
@@ -278,7 +278,7 @@ bool SkillLoader::parse_metadata_json(const std::string& json_str, SkillMetadata
     // Simple JSON-like parsing for the metadata object
     // Looking for: { "opencrank": { ... } } or { "moltbot": { ... } }
     
-    LOG_DEBUG("[SkillLoader] Parsing metadata JSON (%zu bytes)", json_str.size());
+    LOG_DEBUG("Parsing metadata JSON (%zu bytes)", json_str.size());
     
     // Find opencrank or moltbot key
     size_t opencrank_pos = json_str.find("\"opencrank\"");
@@ -290,11 +290,11 @@ bool SkillLoader::parse_metadata_json(const std::string& json_str, SkillMetadata
     }
     
     if (key_pos == std::string::npos) {
-        LOG_DEBUG("[SkillLoader] No opencrank or moltbot key found in metadata");
+        LOG_DEBUG("No opencrank or moltbot key found in metadata");
         return false;
     }
     
-    LOG_DEBUG("[SkillLoader] Found metadata key at position %zu", key_pos);
+    LOG_DEBUG("Found metadata key at position %zu", key_pos);
     
     // Find the opening brace for the value
     size_t brace_start = json_str.find('{', key_pos);
@@ -384,7 +384,7 @@ bool SkillLoader::parse_metadata_json(const std::string& json_str, SkillMetadata
     // "requires": { "bins": [...], "anyBins": [...], ... }
     size_t requires_pos = inner.find("\"requires\"");
     if (requires_pos != std::string::npos) {
-        LOG_DEBUG("[SkillLoader] Found requirements section in metadata");
+        LOG_DEBUG("Found requirements section in metadata");
         size_t req_brace = inner.find('{', requires_pos);
         if (req_brace != std::string::npos) {
             int req_depth = 0;
@@ -401,13 +401,13 @@ bool SkillLoader::parse_metadata_json(const std::string& json_str, SkillMetadata
             }
             if (req_end != std::string::npos) {
                 std::string req_str = inner.substr(req_brace, req_end - req_brace + 1);
-                LOG_DEBUG("[SkillLoader] Parsing requirements: %s", req_str.c_str());
+                LOG_DEBUG("Parsing requirements: %s", req_str.c_str());
                 parse_requirements(req_str, metadata.requirements);
             }
         }
     }
     
-    LOG_DEBUG("[SkillLoader] Metadata JSON parsing complete");
+    LOG_DEBUG("Metadata JSON parsing complete");
     return true;
 }
 
@@ -481,10 +481,10 @@ bool SkillLoader::parse_install_spec(const std::string& json_str, SkillInstallSp
 }
 
 std::string SkillLoader::read_file(const std::string& path) {
-    LOG_DEBUG("[SkillLoader] Reading file: %s", path.c_str());
+    LOG_DEBUG("Reading file: %s", path.c_str());
     std::ifstream file(path.c_str());
     if (!file.is_open()) {
-        LOG_ERROR("[SkillLoader] Failed to open file: %s", path.c_str());
+        LOG_ERROR(" Failed to open file: %s", path.c_str());
         set_error("Failed to open file: " + path);
         return "";
     }
@@ -492,7 +492,7 @@ std::string SkillLoader::read_file(const std::string& path) {
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string content = buffer.str();
-    LOG_DEBUG("[SkillLoader] Successfully read %zu bytes from: %s", content.size(), path.c_str());
+    LOG_DEBUG("Successfully read %zu bytes from: %s", content.size(), path.c_str());
     return content;
 }
 

@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Skills Manager Implementation
+ * OpenCrank C++ - Skills Manager Implementation
  * 
  * Manages skills loading, filtering, and prompt generation.
  */
@@ -168,7 +168,7 @@ bool SkillManager::should_include_skill(
             }
         }
         if (!os_match) {
-            LOG_DEBUG("  ✗ %s: OS mismatch (requires %s, have %s)", 
+            LOG_DEBUG("✗ %s: OS mismatch (requires %s, have %s)", 
                      entry.skill.name.c_str(), meta.os[0].c_str(), current_os.c_str());
             return false;
         }
@@ -187,7 +187,7 @@ bool SkillManager::should_include_skill(
                 found = has_binary(reqs.bins[i]);
             }
             if (!found) {
-                LOG_DEBUG("  ✗ %s: missing required binary '%s'", 
+                LOG_DEBUG("✗ %s: missing required binary '%s'", 
                          entry.skill.name.c_str(), reqs.bins[i].c_str());
                 return false;
             }
@@ -215,7 +215,7 @@ bool SkillManager::should_include_skill(
                 if (i > 0) bins_list += ", ";
                 bins_list += reqs.any_bins[i];
             }
-            LOG_DEBUG("  ✗ %s: none of required binaries found: %s", 
+            LOG_DEBUG("✗ %s: none of required binaries found: %s", 
                      entry.skill.name.c_str(), bins_list.c_str());
             return false;
         }
@@ -225,7 +225,7 @@ bool SkillManager::should_include_skill(
     if (!reqs.env.empty()) {
         for (size_t i = 0; i < reqs.env.size(); ++i) {
             if (!has_env(reqs.env[i])) {
-                LOG_DEBUG("  ✗ %s: missing required env var '%s'", 
+                LOG_DEBUG("✗ %s: missing required env var '%s'", 
                          entry.skill.name.c_str(), reqs.env[i].c_str());
                 return false;
             }
@@ -320,7 +320,7 @@ std::string SkillManager::format_skills_for_prompt(const std::vector<Skill>& ski
     
     for (size_t i = 0; i < skills.size(); ++i) {
         const Skill& skill = skills[i];
-        LOG_DEBUG("  Adding skill to prompt: %s (location: %s)", 
+        LOG_DEBUG("Adding skill to prompt: %s (location: %s)", 
                  skill.name.c_str(), skill.file_path.c_str());
         oss << "<skill name=\"" << skill.name << "\" location=\"" << skill.file_path << "\">\n";
         oss << "  <description>" << skill.description << "</description>\n";
@@ -385,7 +385,6 @@ std::string SkillManager::build_skills_section(const std::vector<SkillEntry>* en
     std::string result = oss.str();
     LOG_INFO(" Built skills section with %zu skills", 
              entries ? entries->size() : 0);
-    LOG_DEBUG("Skills section:\n%s", result.c_str());
     
     return result;
 }

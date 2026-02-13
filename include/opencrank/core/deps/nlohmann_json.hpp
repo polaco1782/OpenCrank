@@ -2591,7 +2591,7 @@ JSON_HEDLEY_DIAGNOSTIC_POP
     template<typename BasicJsonType>                                                            \
     inline void to_json(BasicJsonType& j, const ENUM_TYPE& e)                                   \
     {                                                                                           \
-        /* NOLINTNEXTLINE(modernize-type-traits) we use C++11 */                                \
+        /* NOLINTNEXTLINE(modernize-type-traits) we use C++ */                                \
         static_assert(std::is_enum<ENUM_TYPE>::value, #ENUM_TYPE " must be an enum!");          \
         /* NOLINTNEXTLINE(modernize-avoid-c-arrays) we don't want to depend on <array> */       \
         static const std::pair<ENUM_TYPE, BasicJsonType> m[] = __VA_ARGS__;                     \
@@ -2605,7 +2605,7 @@ JSON_HEDLEY_DIAGNOSTIC_POP
     template<typename BasicJsonType>                                                            \
     inline void from_json(const BasicJsonType& j, ENUM_TYPE& e)                                 \
     {                                                                                           \
-        /* NOLINTNEXTLINE(modernize-type-traits) we use C++11 */                                \
+        /* NOLINTNEXTLINE(modernize-type-traits) we use C++ */                                \
         static_assert(std::is_enum<ENUM_TYPE>::value, #ENUM_TYPE " must be an enum!");          \
         /* NOLINTNEXTLINE(modernize-avoid-c-arrays) we don't want to depend on <array> */       \
         static const std::pair<ENUM_TYPE, BasicJsonType> m[] = __VA_ARGS__;                     \
@@ -3235,7 +3235,7 @@ using enable_if_t = typename std::enable_if<B, T>::type;
 // Class template representing a compile-time integer sequence. An instantiation
 // of `integer_sequence<T, Ints...>` has a sequence of integers encoded in its
 // type through its template arguments (which is a common need when
-// working with C++11 variadic templates). `absl::integer_sequence` is designed
+// working with C++ variadic templates). `absl::integer_sequence` is designed
 // to be a drop-in replacement for C++14's `std::integer_sequence`.
 //
 // Example:

@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Tool Provider Implementation
+ * OpenCrank C++ - Tool Provider Implementation
  */
 #include <opencrank/core/tool.hpp>
 #include <opencrank/core/agent.hpp>

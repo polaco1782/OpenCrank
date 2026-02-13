@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - AI Process Monitor Implementation
+ * OpenCrank C++ - AI Process Monitor Implementation
  */
 #include <opencrank/core/ai_monitor.hpp>
 #include <opencrank/core/application.hpp>

@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Dynamic Plugin Loader
+ * opencrank C++ - Dynamic Plugin Loader
  * 
  * Loads plugins from shared libraries (.so files) at runtime.
  * Plugins must export a create_plugin() function.

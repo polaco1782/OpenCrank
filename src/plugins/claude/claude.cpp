@@ -161,14 +161,23 @@ CompletionResult ClaudeAI::chat(
             if (resp.contains("error") && resp["error"].is_object()) {
                 Json error = resp["error"];
                 std::string msg = error.value("message", std::string(""));
-                std::string type = error.value("type", std::string(""));
+                // Handle type/code as either string or number
+                std::string type_str;
+                if (error.contains("type")) {
+                    const Json& type_field = error["type"];
+                    if (type_field.is_string()) {
+                        type_str = type_field.get<std::string>();
+                    } else if (type_field.is_number()) {
+                        type_str = std::to_string(type_field.get<int64_t>());
+                    }
+                }
                 if (!msg.empty()) {
-                    error_msg = type.empty() ? msg : (type + ": " + msg);
+                    error_msg = type_str.empty() ? msg : (type_str + ": " + msg);
                 }
             }
         }
         LOG_ERROR("[Claude] API error: %s (HTTP %d)", error_msg.c_str(), response.status_code);
-        return CompletionResult::fail(error_msg + " (HTTP " + 
+        return CompletionResult::fail(error_msg + " (HTTP " +
                                      std::to_string(response.status_code) + ")");
     }
     

@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Content Chunker Implementation
+ * OpenCrank C++ - Content Chunker Implementation
  * 
  * Handles storing, chunking, and searching large content.
  */

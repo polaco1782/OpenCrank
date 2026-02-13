@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Memory Tool
+ * opencrank C++ - Memory Tool
  * 
  * ToolProvider that exposes memory, file, and task operations to the agent.
  * 

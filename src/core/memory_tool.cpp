@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Memory Tool Implementation
+ * OpenCrank C++ - Memory Tool Implementation
  * 
  * ToolProvider exposing memory, file, and task operations to the agent.
  * Memory and tasks are database-only (read/write to SQLite).

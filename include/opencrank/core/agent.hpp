@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Agentic Loop
+ * opencrank C++ - Agentic Loop
  * 
  * Implements an agentic loop that allows the AI to call tools and receive results.
  * Uses JSON format for tool invocations.

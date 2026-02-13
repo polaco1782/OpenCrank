@@ -167,7 +167,7 @@ CompletionResult OpenRouterAI::chat(
         m["content"] = msg.content;
         msgs.push_back(m);
         
-        LOG_DEBUG("  ▶ [%zu] %s (%zu chars): %.300s%s", 
+        LOG_DEBUG("▶ [%zu] %s (%zu chars): %.300s%s", 
                   i, role_to_string(msg.role).c_str(), 
                   msg.content.size(), msg.content.c_str(),
                   msg.content.size() > 300 ? "..." : "");
@@ -219,14 +219,23 @@ CompletionResult OpenRouterAI::chat(
         if (resp.is_object()) {
             if (resp.contains("error") && resp["error"].is_object()) {
                 std::string msg = resp["error"].value("message", std::string(""));
-                std::string code = resp["error"].value("code", std::string(""));
+                // Handle code as either string or number
+                std::string code_str;
+                if (resp["error"].contains("code")) {
+                    const Json& code_field = resp["error"]["code"];
+                    if (code_field.is_string()) {
+                        code_str = code_field.get<std::string>();
+                    } else if (code_field.is_number()) {
+                        code_str = std::to_string(code_field.get<int64_t>());
+                    }
+                }
                 if (!msg.empty()) {
-                    error_msg = code.empty() ? msg : (code + ": " + msg);
+                    error_msg = code_str.empty() ? msg : (code_str + ": " + msg);
                 }
             }
         }
         LOG_ERROR(" API error: %s (HTTP %d)", error_msg.c_str(), response.status_code);
-        return CompletionResult::fail(error_msg + " (HTTP " + 
+        return CompletionResult::fail(error_msg + " (HTTP " +
                                      std::to_string(response.status_code) + ")");
     }
     

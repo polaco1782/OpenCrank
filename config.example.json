@@ -1,5 +1,5 @@
 {
-  "_comment": "OpenCrank C++11 - Example Configuration. Copy to config.json and fill in your credentials.",
+  "_comment": "OpenCrank C++ - Example Configuration. Copy to config.json and fill in your credentials.",
 
   "plugins": [
     "telegram",

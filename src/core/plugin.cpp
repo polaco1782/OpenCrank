@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Plugin Registry Implementation
+ * OpenCrank C++ - Plugin Registry Implementation
  */
 #include <opencrank/core/registry.hpp>
 #include <opencrank/core/logger.hpp>
@@ -23,7 +23,7 @@ void PluginRegistry::register_command(const CommandDef& cmd) {
         return;
     }
     commands_[cmd.command] = cmd;
-    LOG_DEBUG(" -> Registered: %s", cmd.command.c_str());
+    LOG_DEBUG("-> Registered: %s", cmd.command.c_str());
 }
 
 void PluginRegistry::register_commands(const std::vector<CommandDef>& cmds) {
@@ -109,7 +109,7 @@ ToolResult PluginRegistry::execute_tool(const std::string& tool_id,
 AIPlugin* PluginRegistry::get_default_ai() {
     LOG_DEBUG("Selecting default AI provider from %zu registered providers", ai_providers_.size());
     for (size_t i = 0; i < ai_providers_.size(); ++i) {
-        LOG_DEBUG("  Checking: %s (initialized=%d, configured=%d)", 
+        LOG_DEBUG("Checking: %s (initialized=%d, configured=%d)", 
                   ai_providers_[i]->provider_id().c_str(),
                   ai_providers_[i]->is_initialized(),
                   ai_providers_[i]->is_configured());

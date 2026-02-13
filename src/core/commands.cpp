@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Core Commands Implementation
+ * OpenCrank C++ - Core Commands Implementation
  */
 #include <opencrank/core/commands.hpp>
 #include <opencrank/core/logger.hpp>
@@ -10,7 +10,7 @@
 namespace opencrank {
 
 namespace {
-static std::string core_app_name = "OpenCrank C++11";
+static std::string core_app_name = "OpenCrank C++";
 static std::string core_app_version = "0.5.0";
 }
 
@@ -53,7 +53,7 @@ std::string cmd_help(const Message& /*msg*/, Session& /*session*/, const std::st
     const std::map<std::string, CommandDef>& commands = registry.commands();
 
     std::ostringstream oss;
-    oss << "OpenCrank C++11 Bot 🦞\n\n"
+    oss << "OpenCrank C++ Bot 🦞\n\n"
         << "Commands:\n";
 
     for (const auto& [command, def] : commands) {

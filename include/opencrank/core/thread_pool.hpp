@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Thread Pool for Message Processing
+ * opencrank C++ - Thread Pool for Message Processing
  */
 #ifndef opencrank_CORE_THREAD_POOL_HPP
 #define opencrank_CORE_THREAD_POOL_HPP

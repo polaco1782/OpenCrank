@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Application Implementation
+ * OpenCrank C++ - Application Implementation
  * 
  * Central application singleton managing the lifecycle of all components.
  */
@@ -29,7 +29,7 @@ namespace opencrank {
 
 const char* AppInfo::default_system_prompt() {
     return 
-        "You are OpenCrank, a helpful AI assistant running on a minimal C++11 framework. "
+        "You are OpenCrank, a helpful AI assistant running on a minimal C++ framework. "
         "You are friendly, concise, and helpful. Keep responses brief unless asked for detail. "
         "You can help with questions, coding, and general conversation.";
 }
@@ -199,21 +199,13 @@ void Application::activate_sandbox() {
 
 void Application::setup_logging() {
     auto log_level = config_.get_string("log_level", "info");
-    
+
     if (log_level == "debug") {
         Logger::instance().set_level(LogLevel::DEBUG);
     } else if (log_level == "warn") {
         Logger::instance().set_level(LogLevel::WARN);
     } else if (log_level == "error") {
         Logger::instance().set_level(LogLevel::ERROR);
-    }
-    
-    // Load custom system prompt from config
-    auto custom_prompt = config_.get_string("system_prompt", "");
-    if (!custom_prompt.empty()) {
-        if (!system_prompt_.empty()) system_prompt_ += "\n\n";
-        system_prompt_ += custom_prompt;
-        LOG_DEBUG("Appended custom system prompt from config");
     }
 }
 
@@ -238,30 +230,47 @@ void Application::setup_skills() {
     skill_entries_ = std::move(eligible);
     skill_command_specs_ = skill_manager_.build_workspace_skill_command_specs(&entries, nullptr, nullptr);
     
-    LOG_DEBUG("[Skills] Built %zu skill command specs", skill_command_specs_.size());
+    LOG_DEBUG("Built %zu skill command specs", skill_command_specs_.size());
     for (const auto& spec : skill_command_specs_) {
-        LOG_DEBUG("[Skills]   /%s -> skill '%s' (%s)", spec.name.c_str(), spec.skill_name.c_str(), spec.description.c_str());
+        LOG_DEBUG("  /%s -> skill '%s' (%s)", spec.name.c_str(), spec.skill_name.c_str(), spec.description.c_str());
     }
-    
-    // Append skills section to system prompt
+}
+
+void Application::setup_system_prompt() {
+    // ── 1. Default base prompt ──
+    system_prompt_ = AppInfo::default_system_prompt();
+    LOG_DEBUG("Loaded default system prompt");
+
+    // ── 2. Custom prompt from config.json ──
+    auto custom_prompt = config_.get_string("system_prompt", "");
+    if (!custom_prompt.empty()) {
+        system_prompt_ += "\n\n";
+        system_prompt_ += custom_prompt;
+        LOG_DEBUG("Appended custom system prompt from config");
+    }
+
+    // ── 3. Skills section (from already-loaded skill entries) ──
     if (!skill_entries_.empty()) {
+        // Reload entries to pass to build_skills_section
+        auto entries = skill_manager_.load_workspace_skill_entries();
         auto skills_section = skill_manager_.build_skills_section(&entries);
         if (!skills_section.empty()) {
-            if (!system_prompt_.empty()) system_prompt_ += "\n\n";
+            system_prompt_ += "\n\n";
             system_prompt_ += skills_section;
             LOG_DEBUG("Appended skills section to system prompt");
-            
-            auto prompt_size = system_prompt_.size();
-            if (prompt_size > 20000) {
-                LOG_WARN("System prompt is very large (%zu chars). This may consume significant context window.",
-                         prompt_size);
-            } else if (prompt_size > 10000) {
-                LOG_WARN("System prompt is large (%zu chars).", prompt_size);
-            }
-            LOG_DEBUG("Final system prompt size: %zu characters (~%zu tokens)", 
-                      prompt_size, prompt_size / 4);
         }
     }
+
+    // ── Summary ──
+    auto prompt_size = system_prompt_.size();
+    if (prompt_size > 20000) {
+        LOG_WARN("System prompt is very large (%zu chars). This may consume significant context window.",
+                 prompt_size);
+    } else if (prompt_size > 10000) {
+        LOG_WARN("System prompt is large (%zu chars).", prompt_size);
+    }
+    LOG_DEBUG("Final system prompt size: %zu characters (~%zu tokens)",
+              prompt_size, prompt_size / 4);
 }
 
 void Application::setup_agent() {
@@ -496,14 +505,14 @@ bool Application::init(int argc, char* argv[]) {
     
     // Setup components in order
     setup_logging();
+    setup_channels();
     setup_skills();
+    setup_system_prompt();
+    setup_agent();
     
     // Configure session manager
     sessions().set_max_history(static_cast<size_t>(
         config_.get_int("session.max_history", 20)));
-    
-    setup_agent();
-    setup_channels();
     
     // Warm up AI connection
     warmup_ai();

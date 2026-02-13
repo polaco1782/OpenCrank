@@ -1,5 +1,5 @@
 /*
- * opencrank C++11 - Memory Types
+ * opencrank C++ - Memory Types
  * 
  * Data structures for the memory/recall system.
  * Based on opencrank's semantic memory architecture.

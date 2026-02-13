@@ -1,5 +1,5 @@
 /*
- * OpenCrank C++11 - Personal AI Assistant Framework
+ * OpenCrank C++ - Personal AI Assistant Framework
  * 
  * A minimal, modular implementation with dynamic plugin loading support.
  * 

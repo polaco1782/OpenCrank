@@ -324,10 +324,11 @@ std::string Agent::build_tools_prompt() const {
     if (tools_.empty()) {
         return "";
     }
-    
+
     std::ostringstream oss;
     oss << "## Available Tools\n\n";
-    oss << "You MUST use tools to complete tasks. Use this JSON format:\n\n";
+    oss << "**ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it\n";
+    oss << "Use this JSON format:\n";
     oss << "```json\n";
     oss << "{\n";
     oss << "  \"tool\": \"TOOLNAME\",\n";
@@ -342,10 +343,6 @@ std::string Agent::build_tools_prompt() const {
     oss << "2. You can call multiple tools by emitting multiple JSON objects\n";
     oss << "3. You can explain AFTER the tool call(s), never before\n\n";
 
-    oss << "### Web Fetching\n";
-    oss << "When you need to fetch or read web content, use 'browser_extract_text' for readable text,\n";
-    oss << "'browser_fetch' for raw HTML, and 'browser_get_links' for links.\n\n";
-
     oss << "### Large Content Handling\n";
     oss << "When a tool returns content too large to fit in context, it will be automatically chunked.\n";
     oss << "You'll see a message like 'Stored as chunk_N with X chunks'. Refer to the chunking tools to work with this content.\n";
@@ -354,8 +351,6 @@ std::string Agent::build_tools_prompt() const {
     oss << "### User Notifications\n";
     oss << "Use 'notify_user' to tell the user what you're about to do BEFORE doing it, ";
     oss << "but only for significant actions. Good uses: starting a complex multi-step task, or when something failed and it was not expected. ";
-    oss << "warning about something important, or sharing a key finding. ";
-    oss << "Do NOT notify for every small step - one or two notifications per request is ideal.\n\n";
 
     oss << "### Tools:\n\n";
     

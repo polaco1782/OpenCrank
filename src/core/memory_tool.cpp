@@ -111,8 +111,7 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         tool.name = "memory_save";
         tool.description = 
             "Save important information to persistent memory database. "
-            "Use this to remember facts, user preferences, decisions, "
-            "conversation summaries, or anything that should persist across sessions. "
+            "NOTE: When instructed to write something in files like saving API keys, user preferences, or notes, you MUST use this tool to save it. "
             "Memories are searchable via BM25 full-text search.";
         tool.params.push_back(ToolParamSchema(
             "content", "string",
@@ -149,7 +148,7 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         tool.name = "memory_search";
         tool.description = 
             "Search persistent memory using full-text search (BM25 ranking). "
-            "Use this to recall past information, find saved notes, "
+            "NOTE: When instructed to find or read API keys, user preferences, or notes, you MUST use this tool to search it. "
             "or look up things from previous conversations.";
         tool.params.push_back(ToolParamSchema(
             "query", "string",
@@ -181,6 +180,7 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         tool.name = "memory_get";
         tool.description = 
             "Get a specific memory by ID, or list recent memories. "
+            "NOTE: When instructed to read/fetch something in files like API keys, user preferences, or notes, you MUST use this tool to fetch it. "
             "Use without an ID to see what's been saved recently.";
         tool.params.push_back(ToolParamSchema(
             "id", "string",
@@ -212,6 +212,7 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         tool.name = "memory_list";
         tool.description = 
             "List recent memories from the database. "
+            "NOTE: When instructed to find files like API keys, user preferences, or notes, you MUST use this tool to find it. "
             "Shows the most recent saved information, optionally filtered by category.";
         tool.params.push_back(ToolParamSchema(
             "limit", "number",
@@ -237,8 +238,8 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         AgentTool tool;
         tool.name = "file_save";
         tool.description = 
-            "Save content to a file in the workspace memory directory. "
-            "Use for saving structured documents, notes, or daily logs. "
+            "Save content to a file in the workspace directory. "
+            "Use for saving structured documents, source code, notes, or daily logs. DONT use this for saving small pieces of information like API keys or user preferences - use memory_save for that. "
             "Files are saved under the memory/ directory by default.";
         tool.params.push_back(ToolParamSchema(
             "content", "string",
@@ -275,6 +276,7 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         tool.name = "file_read";
         tool.description = 
             "Read a file from the workspace memory directory.";
+            "Use for reading structured documents, source code, notes, or daily logs. DONT use this for reading small pieces of information like API keys or user preferences - use memory_get or memory_search for that. ";
         tool.params.push_back(ToolParamSchema(
             "path", "string",
             "File path relative to workspace",

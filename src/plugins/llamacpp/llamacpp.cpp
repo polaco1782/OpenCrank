@@ -130,7 +130,7 @@ CompletionResult LlamaCppAI::chat(
     if (!opts.system_prompt.empty()) {
         Json sys_msg = Json::object();
         sys_msg["role"] = "system";
-        sys_msg["content"] = opts.system_prompt;
+        sys_msg["content"] = sanitize_utf8(opts.system_prompt);
         msgs.push_back(sys_msg);
     }
     
@@ -142,7 +142,7 @@ CompletionResult LlamaCppAI::chat(
         
         Json m = Json::object();
         m["role"] = role_to_string(msg.role);
-        m["content"] = msg.content;
+        m["content"] = sanitize_utf8(msg.content);
         msgs.push_back(m);
         
     }
@@ -171,7 +171,7 @@ CompletionResult LlamaCppAI::chat(
     }
     
     std::string endpoint = server_url_ + "/v1/chat/completions";
-    std::string request_body = request.dump();
+    std::string request_body = request.dump(-1, ' ', false, Json::error_handler_t::replace);
     LOG_DEBUG("[LlamaCpp] ▶ IN  Sending request to %s (%zu bytes)", endpoint.c_str(), request_body.size());
     
     // Prepare HTTP client

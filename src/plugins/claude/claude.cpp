@@ -1,5 +1,6 @@
 #include <opencrank/plugins/claude/claude.hpp>
 #include <opencrank/core/loader.hpp>
+#include <opencrank/core/utils.hpp>
 #include <sstream>
 
 namespace opencrank {
@@ -119,7 +120,7 @@ CompletionResult ClaudeAI::chat(
         
         Json m = Json::object();
         m["role"] = role_to_string(msg.role);
-        m["content"] = msg.content;
+        m["content"] = sanitize_utf8(msg.content);
         msgs.push_back(m);
         
         LOG_DEBUG("[Claude]   ▶ [%zu] %s (%zu chars): %.300s%s", 
@@ -134,7 +135,7 @@ CompletionResult ClaudeAI::chat(
         request["stream"] = true;
     }
     
-    std::string request_body = request.dump();
+    std::string request_body = request.dump(-1, ' ', false, Json::error_handler_t::replace);
     LOG_DEBUG("[Claude] ▶ IN  Sending request to API (%zu bytes)", request_body.size());
     
     HttpClient http;

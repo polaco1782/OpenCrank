@@ -188,6 +188,14 @@ bool Sandbox::init() {
     ensure_directory(jail_dir_ + "/memory");
     ensure_directory(base_dir_ + "/plugins"); // For plugins
 
+    // Resolve all sandbox directories to their real absolute paths so that
+    // symlinks in $HOME (or elsewhere) don't break the prefix checks in
+    // is_path_allowed().
+    char real_buf[PATH_MAX];
+    if (realpath(base_dir_.c_str(), real_buf)) base_dir_ = std::string(real_buf);
+    if (realpath(db_dir_.c_str(),   real_buf)) db_dir_   = std::string(real_buf);
+    if (realpath(jail_dir_.c_str(), real_buf)) jail_dir_ = std::string(real_buf);
+
     LOG_INFO("[Sandbox] Landlock supported: %s", supported_ ? "yes" : "no");
     LOG_INFO("[Sandbox] Directories initialized:");
     LOG_INFO("[Sandbox]   base: %s", base_dir_.c_str());
@@ -235,7 +243,29 @@ bool Sandbox::is_path_allowed(const std::string& path) const {
 
     char resolved[PATH_MAX];
     const char* rp = realpath(path.c_str(), resolved);
-    std::string check_path = rp ? std::string(rp) : path;
+    std::string check_path;
+
+    if (rp) {
+        check_path = std::string(rp);
+    } else {
+        // The file may not exist yet (e.g. a new file being written).
+        // Resolve the parent directory and re-attach the filename so the
+        // prefix check below works correctly.
+        size_t slash = path.rfind('/');
+        if (slash != std::string::npos) {
+            std::string parent   = path.substr(0, slash);
+            std::string filename = path.substr(slash + 1);
+            const char* prp = realpath(parent.c_str(), resolved);
+            check_path = prp ? (std::string(prp) + "/" + filename) : path;
+        } else {
+            // Bare filename with no directory component — resolve against cwd
+            // to get an absolute path we can compare against base_dir_.
+            char cwd[PATH_MAX];
+            check_path = (getcwd(cwd, sizeof(cwd)))
+                ? (std::string(cwd) + "/" + path)
+                : path;
+        }
+    }
 
     // Check base_dir (includes db_dir and jail_dir)
     if (check_path.size() >= base_dir_.size() &&

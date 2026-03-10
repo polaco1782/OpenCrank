@@ -550,7 +550,9 @@ bool Application::init(int argc, char* argv[]) {
     if (channel_count == 0 && !has_gateway) {
         return false;
     }
-    
+
+    // Start CRON thread
+    start_cron_thread();
     return true;
 }
 
@@ -572,12 +574,14 @@ int Application::run() {
             user_limiter_.cleanup(3600);
         }
     }
-    
+    stop_cron_thread();
     return 0;
 }
 
 void Application::shutdown() {
     LOG_INFO("Shutting down...");
+    
+    stop_cron_thread();
     
     // Stop AI monitor first
     ai_monitor_.stop();

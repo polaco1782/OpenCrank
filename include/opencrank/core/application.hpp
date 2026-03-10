@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <thread>
 
 namespace opencrank {
 
@@ -131,6 +132,13 @@ private:
     // System prompt
     std::string system_prompt_;
     std::string config_file_;
+    
+    // CRON task thread
+    void start_cron_thread();
+    void stop_cron_thread();
+    void cron_thread_func();
+    std::thread* cron_thread_ = nullptr;
+    std::atomic<bool> cron_thread_stop_{false};
 };
 
 // ============================================================================

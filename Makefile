@@ -35,6 +35,7 @@ CORE_SOURCES = $(SRC_DIR)/core/types.cpp \
                $(SRC_DIR)/core/loader.cpp \
                $(SRC_DIR)/core/memory_tool.cpp \
                $(SRC_DIR)/core/application.cpp \
+               $(SRC_DIR)/core/application_cron.cpp \
                $(SRC_DIR)/core/message_handler.cpp \
                $(SRC_DIR)/core/builtin_tools.cpp \
                $(SRC_DIR)/core/content_chunker.cpp \
@@ -64,6 +65,7 @@ CORE_OBJECTS = $(BUILD_DIR)/types.o \
                $(BUILD_DIR)/memory_tool.o \
                $(BUILD_DIR)/agent.o \
                $(BUILD_DIR)/application.o \
+               $(BUILD_DIR)/application_cron.o \
                $(BUILD_DIR)/message_handler.o \
                $(BUILD_DIR)/builtin_tools.o \
                $(BUILD_DIR)/content_chunker.o \
@@ -117,6 +119,9 @@ $(BUILD_DIR)/config.o: $(SRC_DIR)/core/config.cpp
 	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
 
 $(BUILD_DIR)/http_client.o: $(SRC_DIR)/core/http_client.cpp
+	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
+
+$(BUILD_DIR)/application_cron.o: $(SRC_DIR)/core/application_cron.cpp
 	$(CXX) $(CXXFLAGS_PIC) -c $< -o $@
 
 $(BUILD_DIR)/commands.o: $(SRC_DIR)/core/commands.cpp

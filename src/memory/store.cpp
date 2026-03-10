@@ -203,6 +203,7 @@ bool MemoryStore::init_tables() {
         "  user_id TEXT DEFAULT '',"
         "  created_at INTEGER NOT NULL,"
         "  due_at INTEGER DEFAULT 0,"
+        "  cron_expr TEXT DEFAULT '',"
         "  completed INTEGER DEFAULT 0,"
         "  completed_at INTEGER DEFAULT 0"
         ")"
@@ -524,16 +525,16 @@ bool MemoryStore::create_task(const MemoryTask& task) {
     
     const char* sql = 
         "INSERT INTO tasks "
-        "(id, content, context, channel, user_id, created_at, due_at, completed, completed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)";
-    
+        "(id, content, context, channel, user_id, created_at, due_at, cron_expr, completed, completed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)";
+
     sqlite3_stmt* stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         LOG_ERROR("[MemoryStore] create_task prepare failed: %s", sqlite3_errmsg(db_));
         return false;
     }
-    
+
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, task.content.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, task.context.c_str(), -1, SQLITE_TRANSIENT);
@@ -541,15 +542,16 @@ bool MemoryStore::create_task(const MemoryTask& task) {
     sqlite3_bind_text(stmt, 5, task.user_id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 6, created);
     sqlite3_bind_int64(stmt, 7, task.due_at);
-    
+    sqlite3_bind_text(stmt, 8, task.cron_expr.c_str(), -1, SQLITE_TRANSIENT);
+
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    
+
     if (rc != SQLITE_DONE) {
         LOG_ERROR("[MemoryStore] create_task step failed: %s", sqlite3_errmsg(db_));
         return false;
     }
-    
+
     LOG_DEBUG("[MemoryStore] Created task id=%s content='%.50s'",
               id.c_str(), task.content.c_str());
     return true;
@@ -564,7 +566,7 @@ std::vector<MemoryTask> MemoryStore::list_tasks(
     // Build query based on filters
     std::ostringstream sql;
     sql << "SELECT id, content, context, channel, user_id, "
-        << "       created_at, due_at, completed, completed_at "
+        << "       created_at, due_at, cron_expr, completed, completed_at "
         << "FROM tasks";
     
     std::vector<std::string> conditions;
@@ -617,11 +619,13 @@ std::vector<MemoryTask> MemoryStore::list_tasks(
         
         col_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
         task.user_id = col_text ? col_text : "";
-        
+
         task.created_at = sqlite3_column_int64(stmt, 5);
         task.due_at = sqlite3_column_int64(stmt, 6);
-        task.completed = sqlite3_column_int(stmt, 7) != 0;
-        task.completed_at = sqlite3_column_int64(stmt, 8);
+        col_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        task.cron_expr = col_text ? col_text : "";
+        task.completed = sqlite3_column_int(stmt, 8) != 0;
+        task.completed_at = sqlite3_column_int64(stmt, 9);
         
         results.push_back(task);
     }
@@ -636,7 +640,7 @@ MemoryTask MemoryStore::get_task(const std::string& id) {
     
     const char* sql = 
         "SELECT id, content, context, channel, user_id, "
-        "       created_at, due_at, completed, completed_at "
+        "       created_at, due_at, cron_expr, completed, completed_at "
         "FROM tasks WHERE id = ?";
     
     sqlite3_stmt* stmt = nullptr;
@@ -662,11 +666,13 @@ MemoryTask MemoryStore::get_task(const std::string& id) {
         
         col_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
         task.user_id = col_text ? col_text : "";
-        
+
         task.created_at = sqlite3_column_int64(stmt, 5);
         task.due_at = sqlite3_column_int64(stmt, 6);
-        task.completed = sqlite3_column_int(stmt, 7) != 0;
-        task.completed_at = sqlite3_column_int64(stmt, 8);
+        col_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        task.cron_expr = col_text ? col_text : "";
+        task.completed = sqlite3_column_int(stmt, 8) != 0;
+        task.completed_at = sqlite3_column_int64(stmt, 9);
     }
     
     sqlite3_finalize(stmt);

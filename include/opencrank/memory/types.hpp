@@ -124,9 +124,10 @@ struct MemoryTask {
     std::string user_id;    // User who created it
     int64_t created_at;     // Creation timestamp
     int64_t due_at;         // Due date (0 = no due date)
+    std::string cron_expr;  // CRON expression (empty if not scheduled)
     bool completed;         // Whether task is done
     int64_t completed_at;   // When completed
-    
+
     MemoryTask() : created_at(0), due_at(0), completed(false), completed_at(0) {}
 };
 

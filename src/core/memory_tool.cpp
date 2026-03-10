@@ -42,8 +42,16 @@ MemoryTool::~MemoryTool() {
 // ============================================================================
 
 bool MemoryTool::init(const Config& cfg) {
-    workspace_dir_ = cfg.get_string("workspace_dir", ".");
-    
+    workspace_dir_ = cfg.get_string("workspace_dir", "");
+
+    // If not explicitly configured, default to the sandbox jail directory so
+    // that relative paths (e.g. "fizzbuzz.c") resolve to an absolute path
+    // inside ~/.opencrank/jail rather than the process working directory.
+    if (workspace_dir_.empty() || workspace_dir_ == ".") {
+        const std::string& jail = Sandbox::instance().jail_dir();
+        workspace_dir_ = jail.empty() ? "." : jail;
+    }
+
     if (!manager_.init(cfg)) {
         LOG_ERROR("[MemoryTool] Failed to initialize memory manager");
         return false;
@@ -297,7 +305,8 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         tool.name = "task_create";
         tool.description = 
             "Create a new task or reminder in the database. "
-            "Tasks persist across sessions and can have optional due dates.";
+            "Tasks persist across sessions and can have optional due dates or CRON schedules. "
+            "If 'cron' is set, the task will be scheduled according to the CRON expression (e.g. '0 9 * * *' for 9am daily).";
         tool.params.push_back(ToolParamSchema(
             "content", "string",
             "Task description",
@@ -311,6 +320,11 @@ std::vector<AgentTool> MemoryTool::get_agent_tools() const {
         tool.params.push_back(ToolParamSchema(
             "due_at", "number",
             "Due date as Unix timestamp in milliseconds (0 = no due date)",
+            false
+        ));
+        tool.params.push_back(ToolParamSchema(
+            "cron", "string",
+            "CRON expression for scheduled tasks (optional, e.g. '0 9 * * *')",
             false
         ));
         tool.execute = [self](const Json& params) -> AgentToolResult {
@@ -743,14 +757,18 @@ ToolResult MemoryTool::do_task_create(const Json& params) {
     std::string content = params["content"].get<std::string>();
     std::string context;
     int64_t due_at = 0;
+    std::string cron;
     std::string channel;
     std::string user_id;
-    
+
     if (params.contains("context") && params["context"].is_string()) {
         context = params["context"].get<std::string>();
     }
     if (params.contains("due_at") && params["due_at"].is_number()) {
         due_at = params["due_at"].get<int64_t>();
+    }
+    if (params.contains("cron") && params["cron"].is_string()) {
+        cron = params["cron"].get<std::string>();
     }
     if (params.contains("channel") && params["channel"].is_string()) {
         channel = params["channel"].get<std::string>();
@@ -758,8 +776,8 @@ ToolResult MemoryTool::do_task_create(const Json& params) {
     if (params.contains("user_id") && params["user_id"].is_string()) {
         user_id = params["user_id"].get<std::string>();
     }
-    
-    std::string result = manager_.create_task(content, context, due_at, channel, user_id);
+
+    std::string result = manager_.create_task(content, context, due_at, cron, channel, user_id);
     
     if (!result.empty()) {
         std::ostringstream out;

@@ -74,6 +74,7 @@ public:
     std::string create_task(const std::string& content,
                             const std::string& context = "",
                             int64_t due_at = 0,
+                            const std::string& cron = "",
                             const std::string& channel = "",
                             const std::string& user_id = "");
     
